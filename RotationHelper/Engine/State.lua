@@ -177,7 +177,10 @@ function State:Reset(now)
 
     local t = s.target
     local Targets = ns.Targets
-    s.activeEnemies = Targets:ActiveEnemies(now, toggles.aoeMode, t.exists and t.canAttack and not t.dead)
+    -- Dual display: the main display is the single-target one (the AoE one
+    -- predicts with at least 3 enemies, see Recommender:Update).
+    local aoeMode = RH.db.profile.display.dualDisplay and "single" or toggles.aoeMode
+    s.activeEnemies = Targets:ActiveEnemies(now, aoeMode, t.exists and t.canAttack and not t.dead)
     t.timeToDie = t.exists and Targets:TimeToDie(now) or Targets.TTD_UNKNOWN
     ns.Dots:Read(s, now)
     if classData.usesTotems then ReadTotems(s, classData) end

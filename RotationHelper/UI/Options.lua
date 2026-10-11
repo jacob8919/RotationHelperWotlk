@@ -386,8 +386,13 @@ function Options:BuildOptionsTable()
             resetPosition = { type = "execute", name = "Reset position", order = 3,
                 func = function()
                     RH.db.profile.display.point = { unpack(DEFAULT_POINT) }
+                    RH.db.profile.display.aoePoint = { "CENTER", "UIParent", "CENTER", 0, -240 }
                     Changed()
                 end },
+            dualDisplay = { type = "toggle", name = "Dual display (single target + AoE)", order = 4, width = "full",
+                desc = "Like Hekili's dual display: the main display always shows the single-target "
+                    .. "priority and a second display, which you can move on its own, always shows the "
+                    .. "AoE priority (3+ enemies). Use whichever fits the pull. /rh dual toggles it." },
             layout = { type = "header", name = "Layout", order = 10 },
             numIcons = { type = "range", name = "Icons", order = 11, min = 1, max = 5, step = 1,
                 desc = "The main icon plus predicted next actions." },
@@ -396,6 +401,19 @@ function Options:BuildOptionsTable()
             queueScale = { type = "range", name = "Queue icon size", order = 14, min = 0.4, max = 1, step = 0.05,
                 isPercent = true, desc = "Queued icons relative to the main icon." },
             spacing = { type = "range", name = "Spacing", order = 15, min = 0, max = 20, step = 1 },
+            aoeLayout = { type = "header", name = "AoE display (dual display)", order = 17,
+                hidden = function() return not RH.db.profile.display.dualDisplay end },
+            aoeNumIcons = { type = "range", name = "Icons", order = 17.1, min = 1, max = 5, step = 1,
+                desc = "Icons on the AoE display.",
+                hidden = function() return not RH.db.profile.display.dualDisplay end },
+            aoeScale = { type = "range", name = "Scale", order = 17.2, min = 0.5, max = 3, step = 0.05, isPercent = true,
+                desc = "The AoE display's scale, separate from the main display's.",
+                hidden = function() return not RH.db.profile.display.dualDisplay end },
+            aoeIconSize = { type = "range", name = "Icon size", order = 17.3, min = 24, max = 96, step = 1,
+                hidden = function() return not RH.db.profile.display.dualDisplay end },
+            aoeQueueScale = { type = "range", name = "Queue icon size", order = 17.4, min = 0.4, max = 1, step = 0.05,
+                isPercent = true, desc = "Queued AoE icons relative to its main icon.",
+                hidden = function() return not RH.db.profile.display.dualDisplay end },
             direction = { type = "select", name = "Queue direction", order = 16, values = DIRECTIONS,
                 disabled = function() return RH.db.profile.display.timeline end },
             visibility = { type = "header", name = "Visibility", order = 20 },

@@ -428,6 +428,11 @@ function Mock.NewSession(opts)
         [768] = { "Cat Form", "i" }, [48566] = { "Mangle (Cat)", "i" }, [48564] = { "Mangle (Bear)", "i" },
         [46857] = { "Trauma", "i" }, [48572] = { "Shred", "i" }, [52610] = { "Savage Roar", "i" },
         [48577] = { "Ferocious Bite", "i" }, [50213] = { "Tiger's Fury", "i" }, [50334] = { "Berserk", "i" },
+        [62078] = { "Swipe (Cat)", "i" }, [9634] = { "Dire Bear Form", "i" }, [5487] = { "Bear Form", "i" },
+        [48564] = { "Mangle (Bear)", "i" }, [48568] = { "Lacerate", "i" }, [48562] = { "Swipe (Bear)", "i" },
+        [48480] = { "Maul", "i" }, [48560] = { "Demoralizing Roar", "i" }, [47437] = { "Demoralizing Shout", "i" },
+        [5229] = { "Enrage", "i" }, [61336] = { "Survival Instincts", "i" }, [22812] = { "Barkskin", "i" },
+        [22842] = { "Frenzied Regeneration", "i" },
         [16870] = { "Clearcasting", "i" },
         -- Hunter
         [49052] = { "Steady Shot", "i" }, [49045] = { "Arcane Shot", "i" }, [53209] = { "Chimera Shot", "i" },

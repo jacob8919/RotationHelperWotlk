@@ -685,7 +685,7 @@ function Display:UpdateStatus()
         f.aoeChip:SetPoint("LEFT", aoeAnchor, "RIGHT", CHIP_GAP, 0)
     end
 
-    local mode = AOE_LABELS[toggles.aoeMode]
+    local mode = AOE_LABELS[RH.db.profile.display.dualDisplay and "single" or toggles.aoeMode]
     local enemies = ns.State.real.activeEnemies or 1
     local aoeText = ""
     if mode then

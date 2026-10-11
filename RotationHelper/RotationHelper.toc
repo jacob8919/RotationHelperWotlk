@@ -82,6 +82,7 @@ UI\Keybinds.lua
 UI\Display.lua
 UI\DisplayExtras.lua
 UI\DisplayMouse.lua
+UI\AoEDisplay.lua
 UI\Interrupt.lua
 UI\Minimap.lua
 UI\VersionCheck.lua

@@ -173,6 +173,15 @@ local defaults = {
                 threat = { 0.9, 0.1, 0.1 },
             },
             point = { "CENTER", "UIParent", "CENTER", 0, -150 },
+            -- Dual display (like Hekili's): the main display shows the single
+            -- target priority and a second one the AoE priority, side by side.
+            dualDisplay = false,
+            aoePoint = { "CENTER", "UIParent", "CENTER", 0, -240 },
+            -- The AoE display's own size (spacing and direction follow the main display).
+            aoeScale = 1.0,
+            aoeIconSize = 50,
+            aoeQueueScale = 0.8,
+            aoeNumIcons = 4,
         },
     },
 }
@@ -426,6 +435,13 @@ function RH:CycleAoEMode()
     self:SettingChangedOutsideOptions()
 end
 
+function RH:ToggleDualDisplay()
+    local d = self.db.profile.display
+    d.dualDisplay = not d.dualDisplay
+    self:Print("Dual display " .. (d.dualDisplay and "on: single target above, AoE below." or "off."))
+    self:SettingChangedOutsideOptions()
+end
+
 function RH:TogglePause()
     local p = self.db.profile
     p.paused = not p.paused
@@ -484,6 +500,14 @@ function RH:SetIconCount(arg)
     SetDisplayNumber(self, "numIcons", "icons", arg, 1, 5, true)
 end
 
+function RH:SetAoEScale(arg)
+    SetDisplayNumber(self, "aoeScale", "aoescale", arg, 0.5, 3)
+end
+
+function RH:SetAoEIconCount(arg)
+    SetDisplayNumber(self, "aoeNumIcons", "aoeicons", arg, 1, 5, true)
+end
+
 -- /rh pull N: a local pull timer (0 cancels).
 function RH:StartPullTimer(arg)
     local seconds = tonumber(arg)
@@ -530,8 +554,11 @@ local HELP = {
     { "errors", "show recorded errors (/rh errors clear to empty the list)" },
     { "scale <n>", "display scale (0.5-3)" },
     { "icons <n>", "number of icons shown (1-5)" },
+    { "aoescale <n>", "AoE display scale (0.5-3), with the dual display" },
+    { "aoeicons <n>", "number of icons on the AoE display (1-5)" },
     { "cd", "toggle cooldown recommendations" },
     { "aoe", "cycle AoE mode (auto / single / aoe)" },
+    { "dual", "toggle the dual display: single target and AoE suggestions side by side" },
     { "pause", "pause/resume recommendations" },
     { "debug", "toggle debug output" },
     { "reset", "reset the current profile to defaults" },
@@ -567,6 +594,7 @@ local commands = {
     pots = "ToggleConsumables",
     consumables = "ToggleConsumables",
     aoe = "CycleAoEMode",
+    dual = "ToggleDualDisplay",
     pause = "TogglePause",
     debug = "ToggleDebug",
     test = "ToggleTestMode",
@@ -584,6 +612,8 @@ local commands = {
     pull = "StartPullTimer",
     scale = "SetScale",
     icons = "SetIconCount",
+    aoescale = "SetAoEScale",
+    aoeicons = "SetAoEIconCount",
     help = "PrintHelp",
     config = "OpenOptions",
     options = "OpenOptions",
@@ -615,4 +645,5 @@ BINDING_HEADER_ROTATIONHELPER = "RotationHelper"
 BINDING_NAME_ROTATIONHELPER_TOGGLE_COOLDOWNS = "Toggle Cooldowns"
 BINDING_NAME_ROTATIONHELPER_TOGGLE_CONSUMABLES = "Toggle Consumables"
 BINDING_NAME_ROTATIONHELPER_CYCLE_AOE = "Cycle AoE Mode"
+BINDING_NAME_ROTATIONHELPER_TOGGLE_DUAL = "Toggle Dual Display"
 BINDING_NAME_ROTATIONHELPER_TOGGLE_PAUSE = "Pause / Resume"

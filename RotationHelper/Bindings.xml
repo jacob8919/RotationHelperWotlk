@@ -8,6 +8,9 @@
     <Binding name="ROTATIONHELPER_CYCLE_AOE">
         RotationHelper:CycleAoEMode()
     </Binding>
+    <Binding name="ROTATIONHELPER_TOGGLE_DUAL">
+        RotationHelper:ToggleDualDisplay()
+    </Binding>
     <Binding name="ROTATIONHELPER_TOGGLE_PAUSE">
         RotationHelper:TogglePause()
     </Binding>

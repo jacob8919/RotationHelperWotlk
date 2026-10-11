@@ -43,9 +43,14 @@ function Cooldowns.Read(state, classData, now)
     else
         state.gcdRemains = 0
         -- Casters' GCD is shortened by spell haste, down to 1 second.
-        -- baseGcd: 1 second for Rogues, or per spec ({ feral_combat = 1 }) for cats.
+        -- baseGcd: 1 second for Rogues, per spec ({ feral_combat = 1 }), or a
+        -- function of the state (Druids: 1 second in Cat Form, 1.5 in Bear Form).
         local baseGcd = classData.baseGcd
-        if type(baseGcd) == "table" then baseGcd = baseGcd[ns.Spec.key] end
+        if type(baseGcd) == "function" then
+            baseGcd = baseGcd(state, ns.Spec)
+        elseif type(baseGcd) == "table" then
+            baseGcd = baseGcd[ns.Spec.key]
+        end
         state.gcdDuration = state.buffs.unholy_presence and 1.0 or baseGcd
             or (classData.hasteProbe and math.max(1.0, BASE_GCD * state.hasteFactor)) or BASE_GCD
     end

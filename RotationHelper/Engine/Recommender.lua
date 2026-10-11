@@ -48,10 +48,14 @@ Recommender.context = context -- for the simulator
 local MAX_PREDICTIONS = 5
 Recommender.predictedRunes = {} -- [slot] = { type, readyAt } after the predicted actions
 
--- Reused so updates don't create garbage.
+-- Reused so updates don't create garbage. The AoE set is for the dual
+-- display's second display.
 local recommendations = {}
 local entries = {}
 for i = 1, MAX_PREDICTIONS do entries[i] = {} end
+local aoeRecommendations = {}
+local aoeEntries = {}
+for i = 1, MAX_PREDICTIONS do aoeEntries[i] = {} end
 
 function Recommender:OnEnable()
     self.compiled = {} -- spec key -> compiled APL, or false if there is none
@@ -59,7 +63,7 @@ function Recommender:OnEnable()
     self.resolver = ns.Expressions.CreateResolver(RH.classData)
     -- After an error, clear the icons: stale advice is worse than none.
     RH:RegisterUpdater(function(_, now) Recommender:Update(now) end, RH.UPDATE_ORDER.RECOMMEND,
-        "recommendations", function() RH.recommendations, RH.alternative = nil, nil end)
+        "recommendations", function() RH.recommendations, RH.alternative, RH.aoeRecommendations = nil, nil, nil end)
     -- A profile switch can change the custom rotations.
     self:RegisterMessage("ROTATIONHELPER_CONFIG_CHANGED", "Reset")
     -- A spell that just landed (see ApplyLanded).
@@ -351,9 +355,15 @@ end
 -- { name, spellId, wait, lacksResources, action, limitedBy, usesProc,
 -- procExpires, procReason }, wait counted from now; action is the APL line
 -- that chose it), and the number of entries. `trace` collects the decision trace of the first pick.
-function Recommender:Predict(count, trace)
+--
+-- For the dual display's AoE icons, `enemies` overrides the enemy count and
+-- the results go to the AoE tables (the rune prediction is left alone).
+function Recommender:Predict(count, trace, enemies)
+    local out, pool = recommendations, entries
+    if enemies then out, pool = aoeRecommendations, aoeEntries end
     local now = State.real.now
     local v = State:Virtual()
+    if enemies then v.activeEnemies = enemies end
     local n = 0
     -- Channelling for real: maybe cut it after the next tick. Ticks are
     -- counted from its start, shifted like its end by the lookahead.
@@ -367,7 +377,7 @@ function Recommender:Predict(count, trace)
         local action, readyAt, limitedBy = self:Evaluate(v, i == 1 and trace or nil)
         if not action then break end
         n = i
-        local entry = entries[i]
+        local entry = pool[i]
         entry.name = action.name
         SetAbility(entry, RH.classData.abilities[action.name])
         entry.wait = readyAt - now
@@ -377,11 +387,12 @@ function Recommender:Predict(count, trace)
         entry.limitedBy = limitedBy
         entry.usesProc, entry.procExpires = Abilities.ProcUsed(v, action.name, readyAt)
         entry.procReason = entry.usesProc and ProcIsReason(v, action, entry.usesProc, readyAt) or nil
-        recommendations[i] = entry
+        out[i] = entry
         Abilities.Apply(v, action.name, readyAt)
         self:ClipChannel(v, action.name, readyAt)
     end
-    for i = n + 1, #recommendations do recommendations[i] = nil end
+    for i = n + 1, #out do out[i] = nil end
+    if enemies then return out, n end
     -- The runes once the predicted actions are used (the rune bar, F1).
     local predicted = self.predictedRunes
     for i, rune in ipairs(v.runes) do
@@ -397,4 +408,13 @@ function Recommender:Update(now)
     local recs, n = self:Predict(RH.db.profile.display.numIcons)
     RH.recommendations = n > 0 and recs or nil
     RH.alternative = self:Alternative(recs, n)
+    RH.aoeRecommendations = nil
+    if RH.db.profile.display.dualDisplay then
+        -- The real count when there are more, but at least 3.
+        local t = State.real.target
+        local enemies = ns.Targets:ActiveEnemies(now or State.real.now, "aoe", t.exists and t.canAttack and not t.dead)
+        local d = RH.db.profile.display
+        local aoe, an = self:Predict(d.aoeNumIcons or d.numIcons, nil, enemies)
+        RH.aoeRecommendations = an > 0 and aoe or nil
+    end
 end

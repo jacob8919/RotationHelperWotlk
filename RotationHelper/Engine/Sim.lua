@@ -85,7 +85,11 @@ function Sim.NewState(opts)
     if classData.autoShot then s.autoShotSpeed, s.autoShotNext = classData.simAutoShot or 2.5, 0 end
     if power and power.type == "energy" and classData.energyRegen then s.powerRegen = classData.energyRegen(ns.Spec) end
     local baseGcd = classData.baseGcd
-    if type(baseGcd) == "table" then baseGcd = baseGcd[ns.Spec.key] end
+    if type(baseGcd) == "function" then
+        baseGcd = baseGcd(s, ns.Spec)
+    elseif type(baseGcd) == "table" then
+        baseGcd = baseGcd[ns.Spec.key]
+    end
     if baseGcd then s.gcdDuration = baseGcd end
     return s
 end
