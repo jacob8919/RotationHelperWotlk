@@ -2,10 +2,12 @@ local ADDON_NAME, ns = ...
 
 -- Default Feral (cat) Druid priority for 3.3.5a:
 --   Faerie Fire and Mangle debuffs (anyone's count) > Savage Roar (even at 1
---   point) > Rip at 5 points > Rake > Ferocious Bite at 5 points when Rip and
---   Savage Roar have long left (or the target is about to die) > Shred to
---   build points > at 5 points, pool for the next Rip or Savage Roar
+--   point; at 5 points refreshed early when it would run out with Rip) > Rip
+--   at 5 points > Rake once it's off > Ferocious Bite at 5 points when Rip and
+--   Savage Roar have over 5 seconds left (or the target is about to die) >
+--   Shred to build points > at 5 points, pool for the next Rip or Savage Roar
 --   (Shredding rather than capping energy)
+-- Tuned with WoWSims WotLK (docs/WHITEMANE.md, "DPS tuning").
 -- Mangle instead of Shred when you can't get behind (a setting).
 -- Tiger's Fury when low on energy, Berserk with the big cooldowns.
 -- With Whitemane's Glyph of Omen of Clarity: Faerie Fire on cooldown for a
@@ -38,6 +40,9 @@ actions+=/run_action_list,name=aoe,if=active_enemies>=3
 actions+=/faerie_fire_feral,if=!debuff.faerie_fire.up
 actions+=/mangle_cat,if=!debuff.mangle.up
 actions+=/savage_roar,if=buff.savage_roar.remains<2
+# At 5 points, a Roar that would run out with Rip: refresh it now, so the new
+# one (34s) lasts well past the next Rip instead of both coming due together.
+actions+=/savage_roar,if=combo_points=5&dot.rip.up&dot.rip.remains<=10&buff.savage_roar.remains<=dot.rip.remains+4&target.time_to_die>20
 actions+=/rip,if=combo_points=5&dot.rip.remains<2&target.time_to_die>10
 # Dying before a Rip would finish: Bite instead.
 actions+=/ferocious_bite,if=combo_points=5&target.time_to_die<=10
@@ -45,25 +50,28 @@ actions+=/ferocious_bite,if=combo_points=5&target.time_to_die<=10
 # so Faerie Fire's 6 second cooldown can proc it again.
 actions+=/shred,if=glyph.omen_of_clarity.enabled&buff.clearcasting.up&!option.not_behind&combo_points<5
 actions+=/mangle_cat,if=glyph.omen_of_clarity.enabled&buff.clearcasting.up&option.not_behind&combo_points<5
-actions+=/rake,if=dot.rake.remains<1&target.time_to_die>9
+# With the glyph, hold builders for Faerie Fire coming off cooldown in under
+# half a second (unless energy is high): its free Shred is worth the wait.
+actions+=/variable,name=ff_soon,value=glyph.omen_of_clarity.enabled&talent.omen_of_clarity.enabled&cooldown.faerie_fire_feral.remains>0&cooldown.faerie_fire_feral.remains<0.5&energy<80&!buff.clearcasting.up
+actions+=/rake,if=!dot.rake.up&target.time_to_die>9&!variable.ff_soon
 # ...and Faerie Fire on cooldown for a free Clearcasting (not when about to cap energy).
-actions+=/faerie_fire_feral,if=glyph.omen_of_clarity.enabled&talent.omen_of_clarity.enabled&!buff.clearcasting.up&energy<90
-actions+=/ferocious_bite,if=combo_points=5&dot.rip.remains>8&buff.savage_roar.remains>8
-actions+=/shred,if=!option.not_behind&combo_points<5
-actions+=/mangle_cat,if=option.not_behind&combo_points<5
+actions+=/faerie_fire_feral,if=glyph.omen_of_clarity.enabled&talent.omen_of_clarity.enabled&!buff.clearcasting.up&energy<87
+actions+=/ferocious_bite,if=combo_points=5&dot.rip.remains>5&buff.savage_roar.remains>5
+actions+=/shred,if=!option.not_behind&combo_points<5&!variable.ff_soon
+actions+=/mangle_cat,if=option.not_behind&combo_points<5&!variable.ff_soon
 # At 5 points, Rip and Savage Roar too short for Bite but not due yet: pool
 # energy until whichever runs out first, or Shred before energy caps. Lines
 # are checked when they become usable, so without the wait nothing here would
 # match and the display would go blank (or show a recharging trinket).
 actions+=/variable,name=pool,value=dot.rip.remains-2,if=combo_points=5
 actions+=/variable,name=pool,op=min,value=buff.savage_roar.remains-2,if=combo_points=5
-actions+=/variable,name=pool,op=min,value=energy.time_to_80,if=combo_points=5
+actions+=/variable,name=pool,op=min,value=energy.time_to_70,if=combo_points=5
 actions+=/wait,sec=variable.pool,if=combo_points=5
 # (2.1, not 2: the wait ends at 2 seconds left, give or take rounding.)
 actions+=/savage_roar,if=combo_points=5&buff.savage_roar.remains<2.1
 actions+=/rip,if=combo_points=5&dot.rip.remains<2.1&target.time_to_die>10
-actions+=/shred,if=!option.not_behind&energy>=75
-actions+=/mangle_cat,if=option.not_behind&energy>=75
+actions+=/shred,if=!option.not_behind&energy>=65
+actions+=/mangle_cat,if=option.not_behind&energy>=65
 
 ## Cooldowns
 actions.cooldowns=berserk,if=buff.tigers_fury.up|cooldown.tigers_fury.remains>15

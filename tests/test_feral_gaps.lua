@@ -66,15 +66,24 @@ test("5 points, Rip too short to Bite, not yet due: pool for Rip, not a blank di
     eq(Queue(s, 1), "rip +2.9", "Rip 4.9s left: refresh at 2s left")
 end)
 
-test("5 points, Savage Roar runs out first: pool for Savage Roar", function()
+test("5 points, Savage Roar runs out first with a long Rip: pool for Savage Roar", function()
+    local s = Fight({ rip = 12, roar = 4, energy = 30 })
+    eq(Queue(s, 1), "savage_roar +1.9", "Roar 4s, Rip 12s")
+end)
+
+test("5 points, Savage Roar would run out with Rip: refresh it early", function()
     local s = Fight({ rip = 7, roar = 4, energy = 30 })
-    eq(Queue(s, 1), "savage_roar +1.9", "Roar 4s, Rip 7s")
+    eq(Queue(s, 1), "savage_roar", "Roar 4s, Rip 7s")
+    s = Fight({ rip = 8, roar = 11, energy = 30 })
+    eq(Queue(s, 1), "savage_roar", "Roar 11s, Rip 8s: within 4s of Rip")
+    s = Fight({ rip = 8, roar = 14, energy = 30 })
+    eq(Queue(s, 1), "ferocious_bite +0.5", "Roar 14s, Rip 8s: far enough apart, Bite (35 energy)")
 end)
 
 test("5 points while pooling: Shred before energy caps", function()
-    local s = Fight({ rip = 7, energy = 70 })
-    eq(Queue(s, 1), "shred +1.0", "70 energy, Rip 7s: Shred at 80")
-    s = Fight({ rip = 7, energy = 90 })
+    local s = Fight({ rip = 4.5, energy = 60 })
+    eq(Queue(s, 1), "shred +1.0", "60 energy, Rip 4.4s: Shred at 70")
+    s = Fight({ rip = 4.5, energy = 90 })
     eq(Queue(s, 1), "shred", "already at 90")
 end)
 
@@ -85,9 +94,11 @@ test("boss, trinket recharging: the gap isn't filled with the trinket", function
     eq(q:match("^[^,]+"), "rip +2.9", "pool for Rip")
 end)
 
-test("nothing to wait for: Ferocious Bite when Rip and Savage Roar are long", function()
+test("nothing to wait for: Ferocious Bite when Rip and Savage Roar have over 5 seconds", function()
     local s = Fight({ rip = 11, energy = 40 })
     eq(Queue(s, 1), "ferocious_bite", "Rip 11s")
+    s = Fight({ rip = 6, energy = 40 })
+    eq(Queue(s, 1), "ferocious_bite", "Rip 6s")
 end)
 
 test("sweep: the cat queue is never blank, never led by a recharging trinket", function()

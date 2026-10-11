@@ -191,6 +191,44 @@ the old rotation and all pass on the new one. Full suite: 590 passed, 1 failed (
 rounding failure). Run this time with the upstream tests at the base commit plus mock spell entries for
 the bear/Swipe IDs, using lupa in a uv venv.
 
+
+## 7. DPS tuning with WoWSims (2026-10-11)
+
+**Method:** the addon's cat priority was translated into a WoWSims WotLK rotation and simulated
+against WoWSims' expert feral rotation (`tools/wowsims-feral/`). WoWSims already models this glyph:
+WotLK Classic added a Glyph of Omen of Clarity (spell 206580) with the effect Whitemane describes.
+Setup: P1 gear, the WoWSims standard talents, OoC + Shred + Rip glyphs, full raid buffs, the druid
+keeping up Mangle and Faerie Fire, 3 minute fights, 10,000 fights per rotation, same seed. WoWSims'
+pre-pull Clearcasting and Berserk were removed for a fair comparison.
+
+| Rotation | DPS |
+|---|---|
+| WoWSims expert rotation | 7,666 |
+| Addon before tuning | 7,486 (−2.3%) |
+| **Addon after tuning** | **7,599 (−0.9%)**, +1.5% over before |
+
+The gain held at +1.1% to +1.6% with pre-raid and P3 gear, 90 second and 5 minute fights, without
+Glyph of Shred, without the Omen glyph, and with Mangle/Faerie Fire from someone else. (The Omen glyph
+itself is worth about +15% DPS.)
+
+**Changes kept** (each tested alone, then together):
+- Ferocious Bite at 5 points when Rip and Savage Roar have over **5s** left (was 8s): +43.
+- Rake only **once it's off** (was under 1s left): +33.
+- At 5 points, **refresh Savage Roar early** when it would run out within 4s of Rip (Rip ≤ 10s
+  left), so the new 34s Roar lasts past the next Rip: +25.
+- With the glyph, **hold Shred/Rake for Faerie Fire** coming off cooldown in under 0.5s (energy
+  under 80, no Clearcasting): +10.
+- While pooling at 5 points, Shred from **70** energy (was 80): +9. Glyph Faerie Fire below **87**
+  energy (was 90): +4.
+
+**Tried and rejected:** Rip or Roar only after they fall off (−26 to −46); not spending Clearcasting
+on Shred first (−62); no Bite with Clearcasting or above 67 energy (−82); Berserk on cooldown
+instead of with Tiger's Fury (−16); holding Shred to save energy for Rake (−22); Tiger's Fury at 20
+or 40 energy (no change); Bite energy caps (no gain).
+
+**What's left (~1%):** WoWSims plans energy around every upcoming refresh at once and projects
+Rip's length with Glyph of Shred extensions. That's hard to express as a priority list.
+
 ---
 
 ## Files changed
@@ -214,6 +252,7 @@ the bear/Swipe IDs, using lupa in a uv venv.
 | `tests/test_dual.lua` | **New:** dual display and AoE sizing tests |
 | `tests/wowmock.lua` | Mock spell entries for Swipe (Cat) and the bear spells |
 | `tests/run.lua` | Registers `test_feral_gaps`, `test_bear`, `test_dual` |
+| `tools/wowsims-feral/` | **New:** rotation comparison against WoWSims (section 7) |
 
 > The glyph, cat AoE, bear and dual display tests were lost with the original session and rewritten
 > on 2026-10-11. Each feature was broken on purpose once to check that a test fails.

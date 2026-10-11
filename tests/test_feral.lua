@@ -178,7 +178,7 @@ test("glyph: Clearcasting goes on Shred before Rake (Mangle when not behind)", f
     eq(Queue(s, 1), "mangle_cat", "not behind")
 
     s = Fight({ setUp = true, combo = 2, energy = 50 })
-    s.auras.target[3].expires = s.time + 0.5
+    table.remove(s.auras.target, 3) -- Rake has fallen off
     s:AddAura("player", { name = "Clearcasting", spellId = 16870, duration = 15, expires = s.time + 15 })
     eq(Queue(s, 1), "rake", "no glyph: the usual priority")
 end)
@@ -212,4 +212,29 @@ test("AoE: Clearcasting makes a Swipe free; with the glyph, Faerie Fire for it",
     s = Fight({ setUp = true, glyph = true, energy = 10 })
     s.env.RotationHelper.db.profile.toggles.aoeMode = "aoe"
     eq(Queue(s, 2), "faerie_fire_feral, swipe_cat +1.0", "glyph")
+end)
+
+---------------------------------------------------------------------------
+-- Tuned with WoWSims (docs/WHITEMANE.md, "DPS tuning")
+---------------------------------------------------------------------------
+test("tuning: Rake once it has fallen off, not before", function()
+    local s = Fight({ setUp = true, combo = 2, energy = 50 })
+    s.auras.target[3].expires = s.time + 0.5
+    eq(Queue(s, 1), "shred", "0.5s left: Shred")
+    table.remove(s.auras.target, 3)
+    eq(Queue(s, 1), "rake", "off: Rake")
+end)
+
+test("tuning: with the glyph, builders wait for Faerie Fire under half a second away", function()
+    local s = Fight({ setUp = true, glyph = true, combo = 2, energy = 50 })
+    s.cooldowns["Faerie Fire (Feral)"] = { s.time - 5.7, 6 } -- 0.2s left after the tick
+    eq(Queue(s, 2), "faerie_fire_feral +0.2, shred +1.2", "wait for Faerie Fire and its free Shred")
+    s.cooldowns["Faerie Fire (Feral)"] = { s.time - 4, 6 }
+    eq(Queue(s, 1), "shred", "2 seconds away: Shred")
+    s = Fight({ setUp = true, glyph = true, combo = 2, energy = 85 })
+    s.cooldowns["Faerie Fire (Feral)"] = { s.time - 5.7, 6 }
+    eq(Queue(s, 1), "shred", "high energy: don't wait")
+    s = Fight({ setUp = true, combo = 2, energy = 50 })
+    s.cooldowns["Faerie Fire (Feral)"] = { s.time - 5.7, 6 }
+    eq(Queue(s, 1), "shred", "no glyph: don't wait")
 end)

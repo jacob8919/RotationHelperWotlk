@@ -1,0 +1,123 @@
+"""Builds WoWSims APL JSON for feral cat rotation variants.
+
+Spell IDs: Mangle (Cat) 48566, Shred 48572, Rake 48574, Rip 49800, Savage Roar 52610,
+Ferocious Bite 48577, Tiger's Fury 50213, Berserk 50334, Faerie Fire (Feral) 16857,
+Clearcasting 16870; Faerie Fire debuff 770.
+"""
+import json, os, sys
+
+MANGLE, SHRED, RAKE, RIP, ROAR, BITE, TF, BERSERK, FF, CC, FFDEBUFF = (
+    48566, 48572, 48574, 49800, 52610, 48577, 50213, 50334, 16857, 16870, 770)
+
+def const(v): return {"const": {"val": str(v)}}
+def sec(v): return const(f"{v}s")
+def cmp(op, l, r): return {"cmp": {"op": op, "lhs": l, "rhs": r}}
+def lt(l, r): return cmp("OpLt", l, r)
+def le(l, r): return cmp("OpLe", l, r)
+def gt(l, r): return cmp("OpGt", l, r)
+def ge(l, r): return cmp("OpGe", l, r)
+def eq(l, r): return cmp("OpEq", l, r)
+def AND(*v): return {"and": {"vals": list(v)}}
+def OR(*v): return {"or": {"vals": list(v)}}
+def NOT(v): return {"not": {"val": v}}
+energy = {"currentEnergy": {}}
+cp = {"currentComboPoints": {}}
+fight_left = {"remainingTime": {}}
+def buff(id): return {"auraIsActive": {"auraId": {"spellId": id}}}
+def buff_left(id): return {"auraRemainingTime": {"auraId": {"spellId": id}}}
+def debuff(id): return {"auraIsActive": {"sourceUnit": {"type": "CurrentTarget"}, "auraId": {"spellId": id}}}
+def dot(id): return {"dotIsActive": {"spellId": {"spellId": id}}}
+def dot_left(id): return {"dotRemainingTime": {"spellId": {"spellId": id}}}
+def cd_left(id): return {"spellTimeToReady": {"spellId": {"spellId": id}}}
+def cast(id, cond=None):
+    a = {"castSpell": {"spellId": {"spellId": id}}}
+    if cond is not None: a["condition"] = cond
+    return {"action": a}
+
+def apl(lines):
+    return {"type": "TypeAPL",
+            "prepullActions": [],
+            "priorityList": [{"action": {"autocastOtherCooldowns": {}}}] + lines}
+
+def write(name, lines, outdir):
+    with open(os.path.join(outdir, name + ".apl.json"), "w") as f:
+        json.dump(apl(lines), f)
+
+# The addon's cat priority (APLs/Druid_Feral.lua) as it was before the WoWSims tuning of
+# 2026-10-11, with the glyph and CDs on. Each option switches on one of the tuned changes
+# (or another idea to try); run.sh's "addon_tuned" is the current rotation.
+def addon(o=None):
+    o = dict(dict(
+        bite_rip=8, bite_roar=8,       # Bite when Rip and Roar have this long left
+        rip_refresh=2,                 # Rip when it has less than this left
+        roar_refresh=2,
+        ff_energy=90,                  # glyph Faerie Fire below this energy
+        cc_shred_first=True,           # Clearcasting Shred above Rake
+        bite_no_cc=False, bite_max_energy=None,
+        pool_shred=80,                 # at 5 points, Shred from this energy while waiting
+        rake_refresh=1,
+        berserk_rule="tf",             # "tf": with Tiger's Fury up or TF far away; "cd": on cooldown
+        tf_energy=30,
+        ff_avoid_rip=False,            # don't FF when Rip is due and affordable
+        roar_desync=None,              # don't refresh Roar at 5 points within N seconds of Rip
+        wait_ff=None,                  # hold Shred/Rake when FF is ready within this many seconds (energy below wait_ff_energy)
+        wait_ff_energy=80,
+        berserk_bite_energy=None,      # during Berserk, Bite only at or below this energy
+        roar_clip=None,                # (leeway, max rip left): at 5 points refresh Roar early when it ends near Rip
+        rake_reserve=False,            # hold Shred so Rake can be refreshed the moment it drops
+    ), **(o or {}))
+    hold = None
+    if o["wait_ff"] is not None:
+        hold = AND(lt(cd_left(FF), sec(o["wait_ff"])), gt(cd_left(FF), sec(0)), lt(energy, const(o["wait_ff_energy"])), NOT(buff(CC)))
+    L = []
+    if o["berserk_rule"] == "tf":
+        L.append(cast(BERSERK, OR(buff(TF), gt(cd_left(TF), sec(15)))))
+    else:
+        L.append(cast(BERSERK))
+    L.append(cast(TF, lt(energy, const(o["tf_energy"]))))
+    L.append(cast(FF, NOT(debuff(FFDEBUFF))))
+    L.append(cast(MANGLE, NOT(debuff(MANGLE))))
+    L.append(cast(ROAR, AND(ge(cp, const(1)), lt(buff_left(ROAR), sec(o["roar_refresh"])))))
+    if o["roar_clip"]:
+        leeway, maxrip = o["roar_clip"]
+        # Roar ends no later than Rip + leeway, Rip ends soon enough that a 34s Roar lasts well past it.
+        L.append(cast(ROAR, AND(eq(cp, const(5)), dot(RIP), le(dot_left(RIP), sec(maxrip)),
+                                OR(*[AND(ge(dot_left(RIP), sec(r)), le(buff_left(ROAR), sec(r + 1 + leeway)))
+                                     for r in range(0, maxrip + 1)]),
+                                gt(fight_left, sec(20)))))
+    L.append(cast(RIP, AND(eq(cp, const(5)), lt(dot_left(RIP), sec(o["rip_refresh"])), gt(fight_left, sec(10)))))
+    L.append(cast(BITE, AND(eq(cp, const(5)), le(fight_left, sec(10)))))
+    if o["cc_shred_first"]:
+        L.append(cast(SHRED, AND(buff(CC), lt(cp, const(5)))))
+    rk = [lt(dot_left(RAKE), sec(o["rake_refresh"])), gt(fight_left, sec(9))]
+    if hold is not None: rk.append(NOT(hold))
+    L.append(cast(RAKE, AND(*rk)))
+    ffc = [NOT(buff(CC)), lt(energy, const(o["ff_energy"]))]
+    if o["ff_avoid_rip"]:
+        ffc.append(NOT(AND(eq(cp, const(5)), lt(dot_left(RIP), sec(o["rip_refresh"] + 1)))))
+    L.append(cast(FF, AND(*ffc)))
+    bc = [eq(cp, const(5)), gt(dot_left(RIP), sec(o["bite_rip"])), gt(buff_left(ROAR), sec(o["bite_roar"]))]
+    if o["bite_no_cc"]: bc.append(NOT(buff(CC)))
+    if o["bite_max_energy"] is not None: bc.append(lt(energy, const(o["bite_max_energy"])))
+    if o["berserk_bite_energy"] is not None:
+        bc.append(OR(NOT(buff(BERSERK)), le(energy, const(o["berserk_bite_energy"]))))
+    L.append(cast(BITE, AND(*bc)))
+    sh = [lt(cp, const(5))]
+    if hold is not None: sh.append(NOT(hold))
+    if o["rake_reserve"]:
+        # Hold Shred when Rake (35) drops before energy covers Shred (37) + Rake: rake_left < (72 - energy) / 10.
+        holds = []
+        for e in range(0, 72, 4):
+            holds.append(AND(ge(energy, const(e)), lt(energy, const(e + 4)), dot(RAKE),
+                             lt(dot_left(RAKE), sec(round((72 - e) / 10, 2)))))
+        sh.append(NOT(AND(NOT(buff(CC)), OR(*holds))))
+    L.append(cast(SHRED, AND(*sh)))
+    L.append(cast(SHRED, ge(energy, const(o["pool_shred"]))))
+    return L
+
+if __name__ == "__main__":
+    outdir = sys.argv[1]
+    variants = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+    write("addon_original", addon(), outdir)
+    for name, opts in variants.items():
+        write(name, addon(opts), outdir)
