@@ -30,6 +30,8 @@ local SUITES = {
     "test_balance",
     "test_feral",
     "test_feral_gaps",
+    "test_bear",
+    "test_dual",
     "test_marksmanship",
     "test_survival",
     "test_beast_mastery",

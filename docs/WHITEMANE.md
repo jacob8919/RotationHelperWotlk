@@ -208,24 +208,25 @@ the bear/Swipe IDs, using lupa in a uv venv.
 | `RotationHelper/Core.lua` | Defaults, `ToggleDualDisplay`, `SetAoEScale`, `SetAoEIconCount`, slash commands and help, binding name |
 | `RotationHelper/Bindings.xml` | `ROTATIONHELPER_TOGGLE_DUAL` |
 | `RotationHelper/RotationHelper.toc` | Loads `UI\AoEDisplay.lua` after `UI\DisplayMouse.lua` |
-| `tests/test_feral.lua` | Rotation name |
+| `tests/test_feral.lua` | Glyph tests, cat AoE tests, rotation name |
 | `tests/test_feral_gaps.lua` | **New:** 5 combo point gap tests (section 6) |
+| `tests/test_bear.lua` | **New:** bear tests |
+| `tests/test_dual.lua` | **New:** dual display and AoE sizing tests |
 | `tests/wowmock.lua` | Mock spell entries for Swipe (Cat) and the bear spells |
-| `tests/run.lua` | Registers `test_feral_gaps` |
+| `tests/run.lua` | Registers `test_feral_gaps`, `test_bear`, `test_dual` |
 
-> **Missing tests:** the glyph and cat AoE tests in `test_feral.lua`, plus `test_dual.lua` and
-> `test_bear.lua`, were written in the original session but only the addon folder was kept, so they
-> aren't in this repo. The counts under Testing below come from that session.
+> The glyph, cat AoE, bear and dual display tests were lost with the original session and rewritten
+> on 2026-10-11. Each feature was broken on purpose once to check that a test fails.
 
 ## Testing
 
-- **How the tests were run:** this environment has no `lua` binary and couldn't download one (the proxy
-  blocks lua.org mirrors). The workaround: `pip install lupa` (it bundles Lua 5.1), plus a tiny Python
-  runner that `chdir`s to the repo and `loadfile`s `tests/run.lua`.
+- **How the tests were run:** without a `lua` binary, using lupa (it bundles Lua 5.1; on WSL:
+  `uv venv` then `uv pip install lupa`), plus a tiny Python runner that `chdir`s to the repo and
+  `loadfile`s `tests/run.lua`.
 - `tests/test_syntax.lua` uses `io.popen('dir /s /b ...')`, which is **Windows only**. It was skipped,
   and every addon `.lua` file was compiled with `loadfile` instead (116 files, 0 errors).
   `Bindings.xml` was checked as valid XML.
-- **Result:** 612 passed, 1 failed. The failure, `test_fury.lua` "rage: short on rage means waiting for
+- **Result (2026-10-11, all tests in this repo):** 618 passed, 1 failed (`test_syntax` skipped). The failure, `test_fury.lua` "rage: short on rage means waiting for
   the expected income" (expects +1.3, gets +1.2), **was already failing before any changes.** It looks
   like a rounding or floating-point difference, possibly specific to this Lua runtime, and it's
   unrelated to this work.

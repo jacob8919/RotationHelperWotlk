@@ -1,10 +1,14 @@
 -- Feral cat Druid: Cat Form energy, 1 second GCD, Savage Roar, Rip, Rake,
--- Mangle (anyone's), Clearcasting, Berserk, Tiger's Fury.
+-- Mangle (anyone's), Clearcasting, Berserk, Tiger's Fury; Whitemane's Glyph
+-- of Omen of Clarity and the 3+ target list (Swipe).
 local T = require("testlib")
 local test, eq, truthy, falsy, newAddon = T.test, T.eq, T.truthy, T.falsy, T.newAddon
 
 local SPELLS = { "Cat Form", "Mangle (Cat)", "Shred", "Rake", "Rip", "Savage Roar", "Ferocious Bite", "Tiger's Fury",
-    "Berserk", "Faerie Fire (Feral)", "Mark of the Wild" }
+    "Berserk", "Faerie Fire (Feral)", "Mark of the Wild", "Swipe (Cat)" }
+
+-- Whitemane's custom glyph has no known spell ID; it's found by name.
+local GLYPH_ID = 999001
 
 local function near(actual, expected, what, tolerance)
     if type(actual) ~= "number" or math.abs(actual - expected) > (tolerance or 1e-6) then
@@ -13,7 +17,7 @@ local function near(actual, expected, what, tolerance)
 end
 
 -- A cat in combat with a boss; `setUp` puts Faerie Fire, Mangle, Rake, Rip
--- and Savage Roar up.
+-- and Savage Roar up; `glyph` socket the Glyph of Omen of Clarity.
 local function Fight(opts)
     opts = opts or {}
     local s, RH = newAddon({ class = "DRUID" })
@@ -27,6 +31,10 @@ local function Fight(opts)
     s.combo = opts.combo or 0
     s:Learn(unpack(SPELLS))
     s.hasTarget = true
+    if opts.glyph then
+        s.glyphs[1] = GLYPH_ID
+        s.spells[GLYPH_ID] = { "Glyph of Omen of Clarity", "i" }
+    end
     s:FireEvent("PLAYER_TALENT_UPDATE")
     s:FireEvent("PLAYER_REGEN_DISABLED")
     RH.db.profile.toggles.cooldowns = opts.cooldowns or false
@@ -118,4 +126,90 @@ test("simulator: Feral", function()
     truthy((casts.shred or 0) > 12, "Shred per minute " .. tostring(casts.shred))
     truthy((casts.rip or 0) > 2, "Rip per minute " .. tostring(casts.rip))
     truthy((uptime.mangle or 0) > 90 and (uptime.rake or 0) > 80, "Mangle and Rake uptime")
+end)
+
+---------------------------------------------------------------------------
+-- Glyph of Omen of Clarity (Whitemane): Faerie Fire (Feral) always procs
+-- Clearcasting with the Omen of Clarity talent.
+---------------------------------------------------------------------------
+test("glyph: found by name, whatever its spell ID", function()
+    local s = Fight({ glyph = true })
+    truthy(s.ns.Spec.glyphs.omen_of_clarity, "glyph.omen_of_clarity")
+    falsy(Fight().ns.Spec.glyphs.omen_of_clarity, "not socketed")
+end)
+
+test("glyph: Faerie Fire (Feral) predicts Clearcasting, only with the talent", function()
+    local function AfterFaerieFire(s)
+        s.ns.State:Reset()
+        local v = s.ns.State:Virtual()
+        s.ns.Abilities.Apply(v, "faerie_fire_feral", v.now)
+        local rec = v.buffs.clearcasting
+        return rec and rec.expires > v.now and rec.expires - v.now or nil
+    end
+    near(AfterFaerieFire(Fight({ glyph = true })), 15, "Clearcasting for 15 seconds")
+    eq(AfterFaerieFire(Fight()), nil, "no glyph")
+    local s = Fight({ glyph = true })
+    s.talentTabs[3].talents = {}
+    s:FireEvent("PLAYER_TALENT_UPDATE")
+    eq(AfterFaerieFire(s), nil, "no Omen of Clarity talent")
+end)
+
+test("glyph: Faerie Fire on cooldown, its Clearcasting spent on Shred", function()
+    local s = Fight({ setUp = true, glyph = true, combo = 2, energy = 40 })
+    eq(Queue(s, 2), "faerie_fire_feral, shred +1.0", "free Shred after Faerie Fire")
+    s = Fight({ setUp = true, combo = 2, energy = 40 })
+    eq(Queue(s, 1), "shred", "no glyph: Shred, Faerie Fire is up")
+end)
+
+test("glyph: no Faerie Fire about to cap energy, or with Clearcasting already up", function()
+    local s = Fight({ setUp = true, glyph = true, combo = 2, energy = 95 })
+    eq(Queue(s, 1), "shred", "95 energy")
+    s = Fight({ setUp = true, glyph = true, combo = 2, energy = 40 })
+    s:AddAura("player", { name = "Clearcasting", spellId = 16870, duration = 15, expires = s.time + 15 })
+    eq(Queue(s, 1), "shred", "Clearcasting up")
+end)
+
+test("glyph: Clearcasting goes on Shred before Rake (Mangle when not behind)", function()
+    local s = Fight({ setUp = true, glyph = true, combo = 2, energy = 50 })
+    s.auras.target[3].expires = s.time + 0.5 -- Rake running out
+    s:AddAura("player", { name = "Clearcasting", spellId = 16870, duration = 15, expires = s.time + 15 })
+    eq(Queue(s, 1), "shred", "glyph")
+    s.ns.APLOptions.Set("feral_combat", "not_behind", true)
+    eq(Queue(s, 1), "mangle_cat", "not behind")
+
+    s = Fight({ setUp = true, combo = 2, energy = 50 })
+    s.auras.target[3].expires = s.time + 0.5
+    s:AddAura("player", { name = "Clearcasting", spellId = 16870, duration = 15, expires = s.time + 15 })
+    eq(Queue(s, 1), "rake", "no glyph: the usual priority")
+end)
+
+---------------------------------------------------------------------------
+-- 3+ targets: Savage Roar, then Swipe (Cat)
+---------------------------------------------------------------------------
+test("AoE: Swipe with Savage Roar up, no single-target debuffs", function()
+    local s, RH = Fight({ setUp = true, combo = 2 })
+    RH.db.profile.toggles.aoeMode = "aoe"
+    eq(Queue(s, 2), "swipe_cat, swipe_cat +1.0", "100 energy: two Swipes")
+    eq(s.ns.Abilities.PowerCost(RH.classData.abilities.swipe_cat, s.ns.State:Reset()), 45, "50 - Ferocity")
+    RH.db.profile.toggles.aoeMode = "single"
+    falsy(Queue(s, 1):find("swipe"), "one target: no Swipe")
+end)
+
+test("AoE: Savage Roar first, building its point with Mangle", function()
+    local s, RH = Fight({ combo = 0 })
+    RH.db.profile.toggles.aoeMode = "aoe"
+    eq(Queue(s, 3), "mangle_cat, savage_roar +1.0, swipe_cat +2.0", "no points")
+    s = Fight({ combo = 1 })
+    s.env.RotationHelper.db.profile.toggles.aoeMode = "aoe"
+    eq(Queue(s, 1), "savage_roar", "one point is enough")
+end)
+
+test("AoE: Clearcasting makes a Swipe free; with the glyph, Faerie Fire for it", function()
+    local s, RH = Fight({ setUp = true, energy = 10 })
+    RH.db.profile.toggles.aoeMode = "aoe"
+    s:AddAura("player", { name = "Clearcasting", spellId = 16870, duration = 15, expires = s.time + 15 })
+    eq(Queue(s, 1), "swipe_cat", "free at 10 energy")
+    s = Fight({ setUp = true, glyph = true, energy = 10 })
+    s.env.RotationHelper.db.profile.toggles.aoeMode = "aoe"
+    eq(Queue(s, 2), "faerie_fire_feral, swipe_cat +1.0", "glyph")
 end)
