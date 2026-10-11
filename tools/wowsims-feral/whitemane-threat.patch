@@ -1,0 +1,90 @@
+diff --git a/sim/druid/faerie_fire.go b/sim/druid/faerie_fire.go
+index e2052f4..ebda22a 100644
+--- a/sim/druid/faerie_fire.go
++++ b/sim/druid/faerie_fire.go
+@@ -29,7 +29,7 @@ func (druid *Druid) registerFaerieFireSpell() {
+ 			Timer:    druid.NewTimer(),
+ 			Duration: time.Second * 6,
+ 		}
+-		flatThreatBonus = 632.
++		flatThreatBonus = faerieFireBearThreat()
+ 	}
+ 	flags |= core.SpellFlagAPL
+ 
+diff --git a/sim/druid/forms.go b/sim/druid/forms.go
+index df31ee1..5148fc0 100644
+--- a/sim/druid/forms.go
++++ b/sim/druid/forms.go
+@@ -231,6 +231,7 @@ func (druid *Druid) registerCatFormSpell() {
+ }
+ 
+ func (druid *Druid) registerBearFormSpell() {
++	bearThreat := bearFormThreat()
+ 	actionID := core.ActionID{SpellID: 9634}
+ 	healthMetrics := druid.NewHealthMetrics(actionID)
+ 
+@@ -269,7 +270,7 @@ func (druid *Druid) registerBearFormSpell() {
+ 
+ 			druid.AutoAttacks.SetMH(clawWeapon)
+ 
+-			druid.PseudoStats.ThreatMultiplier *= 2.1021
++			druid.PseudoStats.ThreatMultiplier *= bearThreat
+ 			druid.PseudoStats.SchoolDamageDealtMultiplier[stats.SchoolIndexPhysical] *= 1.0 + 0.02*float64(druid.Talents.MasterShapeshifter)
+ 			druid.PseudoStats.DamageTakenMultiplier *= potpdtm
+ 			druid.PseudoStats.SpiritRegenMultiplier *= AnimalSpiritRegenSuppression
+@@ -303,7 +304,7 @@ func (druid *Druid) registerBearFormSpell() {
+ 			druid.form = Humanoid
+ 			druid.AutoAttacks.SetMH(druid.WeaponFromMainHand(druid.MeleeCritMultiplier(Humanoid)))
+ 
+-			druid.PseudoStats.ThreatMultiplier /= 2.1021
++			druid.PseudoStats.ThreatMultiplier /= bearThreat
+ 			druid.PseudoStats.SchoolDamageDealtMultiplier[stats.SchoolIndexPhysical] /= 1.0 + 0.02*float64(druid.Talents.MasterShapeshifter)
+ 			druid.PseudoStats.DamageTakenMultiplier /= potpdtm
+ 			druid.PseudoStats.SpiritRegenMultiplier /= AnimalSpiritRegenSuppression
+diff --git a/sim/druid/swipe.go b/sim/druid/swipe.go
+index 7276065..fcbfe18 100644
+--- a/sim/druid/swipe.go
++++ b/sim/druid/swipe.go
+@@ -36,7 +36,7 @@ func (druid *Druid) registerSwipeBearSpell() {
+ 
+ 		DamageMultiplier: lbdm * thdm * fidm,
+ 		CritMultiplier:   druid.MeleeCritMultiplier(Bear),
+-		ThreatMultiplier: 1,
++		ThreatMultiplier: swipeBearThreat(),
+ 
+ 		ApplyEffects: func(sim *core.Simulation, target *core.Unit, spell *core.Spell) {
+ 			baseDamage := flatBaseDamage + 0.063*spell.MeleeAttackPower()
+diff --git a/sim/druid/whitemane.go b/sim/druid/whitemane.go
+new file mode 100644
+index 0000000..17801dc
+--- /dev/null
++++ b/sim/druid/whitemane.go
+@@ -0,0 +1,28 @@
++package druid
++
++// Whitemane Frostmourne's druid threat changes ("Frostmourne Beta Class Changes",
++// 2026-08-22): Bear Form threat bonus 45% -> 65%, Swipe (Bear) threat multiplier
++// 1.5 -> 1.65, Faerie Fire (Feral) extra threat in bear forms +10%.
++// Off by default (stock WotLK values).
++var WhitemaneThreat = false
++
++func bearFormThreat() float64 {
++	if WhitemaneThreat {
++		return 2.1021 * 1.65 / 1.45
++	}
++	return 2.1021
++}
++
++func swipeBearThreat() float64 {
++	if WhitemaneThreat {
++		return 1.65
++	}
++	return 1
++}
++
++func faerieFireBearThreat() float64 {
++	if WhitemaneThreat {
++		return 632 * 1.1
++	}
++	return 632
++}

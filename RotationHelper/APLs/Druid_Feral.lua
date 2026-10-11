@@ -16,11 +16,14 @@ local ADDON_NAME, ns = ...
 --
 -- In Bear Form (Dire Bear Form) the bear tanking priority runs instead, so
 -- the same rotation covers cat DPS and bear tanking; just shift.
---   Mangle (Bear) on cooldown > Faerie Fire (Feral) on cooldown >
---   Demoralizing Roar (anyone's, a Warrior's shout too) > Lacerate to 5
---   stacks and before it runs out > Swipe (Bear) with spare rage > Lacerate
+--   Mangle (Bear) on cooldown (waiting for it when it's under a second away) >
+--   Faerie Fire (Feral) on cooldown > Demoralizing Roar (anyone's, a
+--   Warrior's shout too) > Lacerate to 5 stacks and before it runs out >
+--   Swipe (Bear) with spare rage > Lacerate (unless Faerie Fire is under 1.5
+--   seconds away)
 -- Maul goes on the next swing with spare rage (off the GCD, next to the
--- others). 3+ enemies: Swipe (Bear) first, Mangle on 3 targets in Berserk.
+-- others): from 25 rage, from 40 on 3+ enemies where Swipe needs the rage.
+-- 3+ enemies: Swipe (Bear) on every GCD it can.
 -- Whitemane buffed Swipe (Bear), Faerie Fire (Feral) and the Bear Form
 -- threat bonus, so Swipe is a strong AoE threat button there.
 ns.RegisterAPL("DRUID", "feral_combat", "Feral cat & bear (default)", [[
@@ -97,19 +100,26 @@ actions.bear+=/survival_instincts,if=option.defensives&health.pct<30
 actions.bear+=/barkskin,if=option.defensives&health.pct<50
 actions.bear+=/trinket1,if=toggle.cooldowns
 actions.bear+=/trinket2,if=toggle.cooldowns
-# Spare rage goes into the next swing.
-actions.bear+=/maul,if=rage>=option.maul_rage
+# Spare rage goes into the next swing (on 3+ enemies, rage for Swipe first).
+actions.bear+=/maul,if=rage>=option.maul_rage&active_enemies<3
+actions.bear+=/maul,if=rage>=option.aoe_maul_rage&active_enemies>=3
 actions.bear+=/run_action_list,name=bear_aoe,if=active_enemies>=3
 actions.bear+=/mangle_bear
+# Mangle is the biggest threat button: rather than filling with Lacerate,
+# wait for it when it's under a second away.
+actions.bear+=/wait,sec=cooldown.mangle_bear.remains,if=cooldown.mangle_bear.remains>0&cooldown.mangle_bear.remains<1
 actions.bear+=/faerie_fire_feral
 actions.bear+=/demoralizing_roar,if=option.demo_roar&!debuff.demoralizing_roar.up
 actions.bear+=/lacerate,if=debuff.lacerate.stack<5|debuff.lacerate.remains<4
 actions.bear+=/swipe_bear,if=rage>=option.swipe_rage
+# Likewise Faerie Fire under 1.5 seconds away beats a filler Lacerate.
+actions.bear+=/wait,sec=cooldown.faerie_fire_feral.remains,if=cooldown.faerie_fire_feral.remains>0&cooldown.faerie_fire_feral.remains<1.5
 actions.bear+=/lacerate
 
 ## Bear, 3+ targets
-actions.bear_aoe=mangle_bear,if=buff.berserk.up
-actions.bear_aoe+=/swipe_bear
+# Swipe on every GCD it can: the lowest-threat mob gets the most that way
+# (Mangle in Berserk was tried and costs it threat).
+actions.bear_aoe=swipe_bear
 actions.bear_aoe+=/demoralizing_roar,if=option.demo_roar&!debuff.demoralizing_roar.up
 actions.bear_aoe+=/mangle_bear
 actions.bear_aoe+=/faerie_fire_feral
@@ -117,8 +127,10 @@ actions.bear_aoe+=/lacerate
 ]], {
     { key = "not_behind", name = "Not behind the target", type = "toggle", default = false,
       desc = "Mangle instead of Shred, e.g. on a boss you can't get behind." },
-    { key = "maul_rage", name = "Bear: Maul at rage", type = "range", default = 40, min = 15, max = 100, step = 5,
-      desc = "Queue Maul from this much rage. Lower it when rage comes in fast." },
+    { key = "maul_rage", name = "Bear: Maul at rage", type = "range", default = 25, min = 15, max = 100, step = 5,
+      desc = "Queue Maul from this much rage (1-2 enemies)." },
+    { key = "aoe_maul_rage", name = "Bear: Maul at rage (3+ enemies)", type = "range", default = 40, min = 15, max = 100, step = 5,
+      desc = "Queue Maul from this much rage on 3+ enemies, keeping rage for Swipe." },
     { key = "swipe_rage", name = "Bear: Swipe filler at rage", type = "range", default = 40, min = 15, max = 100, step = 5,
       desc = "On one target, Swipe (Bear) as filler from this much rage (otherwise Lacerate)." },
     { key = "enrage_rage", name = "Bear: Enrage below rage", type = "range", default = 20, min = 0, max = 100, step = 5,

@@ -14,7 +14,7 @@ local function near(actual, expected, what, tolerance)
     end
 end
 
--- A bear in combat with a boss, `rage`; `setUp` puts Mangle, Faerie Fire,
+-- A bear in combat with a boss, `rage` (20: below Maul); `setUp` puts Mangle, Faerie Fire,
 -- Demoralizing Roar and 5 Lacerates up; `cat` starts in Cat Form instead.
 local function Fight(opts)
     opts = opts or {}
@@ -28,7 +28,7 @@ local function Fight(opts)
     if opts.cat then
         s.power = { type = 3, current = 100, max = 100 }
     else
-        s.power = { type = 1, current = opts.rage or 30, max = 100 }
+        s.power = { type = 1, current = opts.rage or 20, max = 100 }
     end
     s:Learn(unpack(SPELLS))
     s.hasTarget = true
@@ -89,9 +89,9 @@ end)
 
 test("bear: Mangle, Faerie Fire, Demoralizing Roar, then Lacerate", function()
     local s = Fight()
-    eq(Queue(s, 4), "mangle_bear, faerie_fire_feral +1.5, demoralizing_roar +3.0, mangle_bear +4.5",
-        "opener (Mangle on cooldown)")
-    s = Fight({ setUp = true, rage = 30 })
+    eq(Queue(s, 4), "mangle_bear, faerie_fire_feral +1.5, demoralizing_roar +3.0, maul +3.0",
+        "opener (Maul once rage reaches 25)")
+    s = Fight({ setUp = true, rage = 20 })
     s.auras.target[4].count = 1
     eq(Queue(s, 1), "lacerate", "everything up, cooldowns running")
 end)
@@ -105,18 +105,40 @@ test("bear: Lacerate to 5 stacks and before it falls off, else Swipe with spare 
     s.auras.target[4].expires = s.time + 12
     s.auras.target[4].count = 3
     eq(Queue(s, 2):match(", (.*)"), "lacerate", "3 stacks")
-    s = Fight({ setUp = true, rage = 30 })
+    s = Fight({ setUp = true, rage = 20 })
     eq(Queue(s, 1), "lacerate", "below the Swipe rage: Lacerate")
 end)
 
-test("bear: Maul with spare rage, not again while it's queued", function()
-    local s = Fight({ rage = 60 })
+test("bear: Maul from 25 rage (40 on 3+ enemies), not again while it's queued", function()
+    local s, RH = Fight({ rage = 30 })
     eq(Queue(s, 2), "maul, mangle_bear", "next swing, off the GCD")
     s.current["Maul"] = true
     eq(Queue(s, 1), "mangle_bear", "already queued")
     s.current["Maul"] = nil
     Option(s, "maul_rage", 70)
     eq(Queue(s, 1), "mangle_bear", "below the setting")
+
+    s, RH = Fight({ rage = 30 })
+    RH.db.profile.toggles.aoeMode = "aoe"
+    eq(Queue(s, 1), "swipe_bear", "3+ enemies, 30 rage: Swipe keeps the rage")
+    s.power.current = 45
+    eq(Queue(s, 2), "maul, swipe_bear", "45 rage")
+    Option(s, "aoe_maul_rage", 50)
+    eq(Queue(s, 1), "swipe_bear", "below the AoE setting")
+end)
+
+test("bear: wait for Mangle under a second away, for Faerie Fire under 1.5 seconds", function()
+    local s = Fight({ setUp = true, rage = 20 })
+    s.auras.target[4].count = 1 -- Lacerate to stack: the filler
+    s.cooldowns["Mangle (Bear)"] = { s.time - 3.9, 4.5 } -- 0.5s left after the tick
+    eq(Queue(s, 1), "mangle_bear +0.5", "Mangle 0.5s away: wait for it")
+    s.cooldowns["Mangle (Bear)"] = { s.time - 2, 4.5 }
+    eq(Queue(s, 1), "lacerate", "Mangle 2.4s away: Lacerate")
+    s.cooldowns["Faerie Fire (Feral)"] = { s.time - 5, 6 } -- 0.9s left
+    s.auras.target[4].count = 5
+    eq(Queue(s, 1), "faerie_fire_feral +0.9", "Faerie Fire 0.9s away beats a filler Lacerate")
+    s.cooldowns["Faerie Fire (Feral)"] = { s.time - 2, 6 }
+    eq(Queue(s, 1), "lacerate", "Faerie Fire 3.9s away: Lacerate")
 end)
 
 test("bear: anyone's Demoralizing Roar or a Warrior's Demoralizing Shout counts; the setting turns it off", function()
@@ -162,13 +184,13 @@ test("bear: Berserk with cooldowns on; Mangle has no cooldown during it", functi
     eq(Queue(s, 3), "berserk, mangle_bear, mangle_bear +1.5", "Berserk, then Mangle every GCD")
 end)
 
-test("bear: 3+ enemies: Swipe first, Mangle first in Berserk", function()
+test("bear: 3+ enemies: Swipe on every GCD it can, Berserk too", function()
     local s, RH = Fight({ setUp = true, rage = 30 })
     RH.db.profile.toggles.aoeMode = "aoe"
     eq(Queue(s, 2), "swipe_bear, swipe_bear +1.5", "Swipe")
     s.cooldowns["Mangle (Bear)"] = nil
     s:AddAura("player", { name = "Berserk", spellId = 50334, duration = 15, expires = s.time + 15 })
-    eq(Queue(s, 1), "mangle_bear", "Berserk: Mangle hits 3 targets")
+    eq(Queue(s, 1), "swipe_bear", "Berserk: still Swipe")
 end)
 
 test("shifting switches the suggestions; Cat Form isn't pushed on a bear", function()

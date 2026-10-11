@@ -24,7 +24,10 @@ if [ ! -d wowsims ]; then
     git clone -q https://github.com/wowsims/wotlk wowsims
 fi
 cd wowsims
-git checkout -q "$WOWSIMS_COMMIT"
+git checkout -q -f "$WOWSIMS_COMMIT"
+rm -f sim/druid/whitemane.go
+# Whitemane Frostmourne's bear threat changes, behind feralcmp's -whitemane flag.
+git apply "$HERE/whitemane-threat.patch"
 protoc -I=./proto --go_out=./sim/core ./proto/*.proto
 mkdir -p cmd/feralcmp
 cp "$HERE/main.go" cmd/feralcmp/main.go

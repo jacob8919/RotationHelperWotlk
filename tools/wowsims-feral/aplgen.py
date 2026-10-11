@@ -115,9 +115,114 @@ def addon(o=None):
     L.append(cast(SHRED, ge(energy, const(o["pool_shred"]))))
     return L
 
-if __name__ == "__main__":
-    outdir = sys.argv[1]
-    variants = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
-    write("addon_original", addon(), outdir)
+# ---------------------------------------------------------------------------
+# Bear tanking (the addon's actions.bear / actions.bear_aoe lists)
+# ---------------------------------------------------------------------------
+MANGLE_BEAR, LACERATE, SWIPE_BEAR, MAUL, DEMO, ENRAGE, SURV, BARK = (
+    48564, 48568, 48562, 48480, 48560, 5229, 61336, 22812)
+rage = {"currentRage": {}}
+health_pct = {"currentHealthPercent": {}}
+lac_stacks = {"auraNumStacks": {"sourceUnit": {"type": "CurrentTarget"}, "auraId": {"spellId": LACERATE}}}
+targets = {"numberTargets": {}}
+def maul(cond=None):
+    a = {"castSpell": {"spellId": {"spellId": MAUL, "tag": 1}}}
+    if cond is not None: a["condition"] = cond
+    return {"action": a}
+def wait_for(id, within):
+    return {"action": {"condition": AND({"gcdIsReady": {}}, NOT({"spellIsReady": {"spellId": {"spellId": id}}}),
+                                        lt(cd_left(id), sec(within))),
+                       "wait": {"duration": cd_left(id)}}}
+
+def bear(o=None):
+    o = dict(dict(
+        maul_rage=40, maul_first=True,   # Maul at this rage, above (True) or below the GCD abilities
+        aoe_maul_rage=None,              # 3+ targets: Maul at this rage instead
+        swipe_rage=40,                   # single target: Swipe from this rage
+        lac_refresh=4,                   # Lacerate when under 5 stacks or under this many seconds
+        lac_top_refresh=None,            # a top-priority Lacerate refresh at 5 stacks under N seconds
+        mangle_wait=None,                # wait for Mangle when it's this close
+        ff_wait=None,                    # wait for Faerie Fire when it's this close
+        demo=True, enrage_rage=20, defensives=True,
+        swipe_over_lacerate=False,       # single target: Swipe (with rage) above the Lacerate refresh
+        aoe=None,                        # 3+ targets: list order of the bear_aoe list
+        ff_before_mangle=False,
+    ), **(o or {}))
+    L = []
+    L.append(cast(BERSERK))
+    if o["enrage_rage"]:
+        L.append(cast(ENRAGE, lt(rage, const(o["enrage_rage"]))))
+    if o["defensives"]:
+        L.append(cast(SURV, lt(health_pct, const("30%"))))
+        L.append(cast(BARK, lt(health_pct, const("50%"))))
+    if o["maul_first"]:
+        if o["aoe_maul_rage"] is None:
+            L.append(maul(ge(rage, const(o["maul_rage"]))))
+        else:
+            L.append(maul(AND(lt(targets, const(3)), ge(rage, const(o["maul_rage"])))))
+            L.append(maul(AND(ge(targets, const(3)), ge(rage, const(o["aoe_maul_rage"])))))
+    # 3+ targets: the bear_aoe list (run_action_list: nothing below it then).
+    aoe = []
+    for name in (o["aoe"] or ["mangle_berserk", "swipe", "demo", "mangle", "ff", "lacerate"]):
+        if name == "mangle_berserk": aoe.append(cast(MANGLE_BEAR, buff(BERSERK)))
+        elif name == "swipe": aoe.append(cast(SWIPE_BEAR))
+        elif name == "demo": aoe.append(cast(DEMO, NOT(debuff(DEMO))))
+        elif name == "mangle": aoe.append(cast(MANGLE_BEAR))
+        elif name == "ff": aoe.append(cast(FF))
+        elif name == "lacerate": aoe.append(cast(LACERATE))
+    for a in aoe:
+        a["action"]["condition"] = AND(ge(targets, const(3)), a["action"]["condition"]) if "condition" in a["action"] else ge(targets, const(3))
+        L.append(a)
+    st = []
+    if o["lac_top_refresh"] is not None:
+        st.append(cast(LACERATE, AND(eq(lac_stacks, const(5)), le(dot_left(LACERATE), sec(o["lac_top_refresh"])))))
+    if o["ff_before_mangle"]:
+        st.append(cast(FF))
+    st.append(cast(MANGLE_BEAR))
+    if o["mangle_wait"] is not None:
+        st.append(wait_for(MANGLE_BEAR, o["mangle_wait"]))
+    if not o["ff_before_mangle"]:
+        st.append(cast(FF))
+    if o["demo"]:
+        st.append(cast(DEMO, NOT(debuff(DEMO))))
+    if o["swipe_over_lacerate"]:
+        st.append(cast(SWIPE_BEAR, ge(rage, const(o["swipe_rage"]))))
+    st.append(cast(LACERATE, OR(lt(lac_stacks, const(5)), lt(dot_left(LACERATE), sec(o["lac_refresh"])))))
+    if not o["swipe_over_lacerate"]:
+        st.append(cast(SWIPE_BEAR, ge(rage, const(o["swipe_rage"]))))
+    if o["ff_wait"] is not None:
+        st.append(wait_for(FF, o["ff_wait"]))
+    st.append(cast(LACERATE))
+    if not o["maul_first"]:
+        st.append(maul(ge(rage, const(o["maul_rage"]))))
+    # Single-target lines only below 3 targets.
+    for a in st:
+        a["action"]["condition"] = AND(lt(targets, const(3)), a["action"]["condition"]) if "condition" in a["action"] else lt(targets, const(3))
+        L.append(a)
+    if not o["maul_first"]:
+        L.append(maul(ge(rage, const(o["maul_rage"]))))
+    return L
+
+def write_bear(name, lines, outdir):
+    with open(os.path.join(outdir, name + ".apl.json"), "w") as f:
+        json.dump(apl(lines), f)
+
+def main_bear(outdir, variants):
+    write_bear("bear_original", bear(), outdir)
     for name, opts in variants.items():
-        write(name, addon(opts), outdir)
+        write_bear(name, bear(opts), outdir)
+
+
+if __name__ == "__main__":
+    # aplgen.py OUTDIR [VARIANTS_JSON]           cat variants
+    # aplgen.py --bear OUTDIR [VARIANTS_JSON]    bear variants
+    args = sys.argv[1:]
+    is_bear = bool(args) and args[0] == "--bear"
+    if is_bear: args = args[1:]
+    outdir = args[0]
+    variants = json.loads(args[1]) if len(args) > 1 else {}
+    if is_bear:
+        main_bear(outdir, variants)
+    else:
+        write("addon_original", addon(), outdir)
+        for name, opts in variants.items():
+            write(name, addon(opts), outdir)

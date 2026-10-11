@@ -229,6 +229,36 @@ or 40 energy (no change); Bite energy caps (no gain).
 **What's left (~1%):** WoWSims plans energy around every upcoming refresh at once and projects
 Rip's length with Glyph of Shred extensions. That's hard to express as a priority list.
 
+
+## 8. Bear tank tuning with WoWSims (2026-10-11)
+
+**Method:** the bear lists were translated into WoWSims rotations and compared on threat per second
+(TPS), with WoWSims' tank talents, P1 tank gear and glyphs (Maul, Survival Instincts, Frenzied
+Regeneration), the druid keeping up its own Mangle, Faerie Fire and Demoralizing Roar, 3 minute fights.
+WoWSims was patched with Whitemane's threat changes (`tools/wowsims-feral/whitemane-threat.patch`):
+Bear Form ×1.65/1.45, Swipe (Bear) ×1.65 (WoWSims had 1.0; Whitemane says it was 1.5), Faerie Fire
+(Feral) bonus threat 632 → 695. On several targets the measure is the **lowest** target's threat.
+
+| Rotation | 1 target | 3 targets, lowest mob | 5 targets, lowest mob |
+|---|---|---|---|
+| WoWSims tank rotation | 6,230 | 204 (single-target only) | 391 |
+| Addon before | 6,061 | 1,592 | 1,543 |
+| **Addon after** | **6,249 (+3.1%)** | **1,763 (+10.7%)** | **1,709 (+10.8%)** |
+
+Single target also: P3 gear +1.4%, stock WotLK threat +4.6%, 90s fights +3.2%; ahead of WoWSims'
+rotation in each. (Whitemane's changes add ~15% single-target threat and ~80% Swipe AoE threat.)
+
+**Changes kept:**
+- **Wait for Mangle** when it's under 1s away instead of filling with Lacerate: +151 alone.
+- **Wait for Faerie Fire** under 1.5s away before a filler Lacerate: +116 alone.
+- **Maul from 25 rage** on 1–2 targets (was 40; option `maul_rage`); **40 on 3+** (new option
+  `aoe_maul_rage`), where Swipe needs the rage.
+- **AoE: Swipe on every GCD** — the "Mangle in Berserk" line was dropped (it cost the lowest mob 5–11%).
+
+**Tried and not kept:** Faerie Fire above Mangle, Enrage on cooldown, Swipe from 25 rage (≤ +8 once
+the above were in); refreshing Lacerate earlier (8s, or at 1.5s on top), Swipe above Lacerate, Maul at
+50+ or Swipe at 60 (worse); Mangle or Demoralizing Roar first in AoE (worse for the lowest mob).
+
 ---
 
 ## Files changed
@@ -252,7 +282,7 @@ Rip's length with Glyph of Shred extensions. That's hard to express as a priorit
 | `tests/test_dual.lua` | **New:** dual display and AoE sizing tests |
 | `tests/wowmock.lua` | Mock spell entries for Swipe (Cat) and the bear spells |
 | `tests/run.lua` | Registers `test_feral_gaps`, `test_bear`, `test_dual` |
-| `tools/wowsims-feral/` | **New:** rotation comparison against WoWSims (section 7) |
+| `tools/wowsims-feral/` | **New:** rotation comparison against WoWSims (sections 7 and 8) |
 
 > The glyph, cat AoE, bear and dual display tests were lost with the original session and rewritten
 > on 2026-10-11. Each feature was broken on purpose once to check that a test fails.
