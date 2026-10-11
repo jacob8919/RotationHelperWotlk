@@ -3,7 +3,9 @@ local ADDON_NAME, ns = ...
 -- Default Feral (cat) Druid priority for 3.3.5a:
 --   Faerie Fire and Mangle debuffs (anyone's count) > Savage Roar (even at 1
 --   point) > Rip at 5 points > Rake > Ferocious Bite at 5 points when Rip and
---   Savage Roar have long left > Shred to build points (and to not cap energy)
+--   Savage Roar have long left (or the target is about to die) > Shred to
+--   build points > at 5 points, pool for the next Rip or Savage Roar
+--   (Shredding rather than capping energy)
 -- Mangle instead of Shred when you can't get behind (a setting).
 -- Tiger's Fury when low on energy, Berserk with the big cooldowns.
 -- With Whitemane's Glyph of Omen of Clarity: Faerie Fire on cooldown for a
@@ -37,6 +39,8 @@ actions+=/faerie_fire_feral,if=!debuff.faerie_fire.up
 actions+=/mangle_cat,if=!debuff.mangle.up
 actions+=/savage_roar,if=buff.savage_roar.remains<2
 actions+=/rip,if=combo_points=5&dot.rip.remains<2&target.time_to_die>10
+# Dying before a Rip would finish: Bite instead.
+actions+=/ferocious_bite,if=combo_points=5&target.time_to_die<=10
 # Glyph of Omen of Clarity (Whitemane): spend Clearcasting on Shred right away,
 # so Faerie Fire's 6 second cooldown can proc it again.
 actions+=/shred,if=glyph.omen_of_clarity.enabled&buff.clearcasting.up&!option.not_behind&combo_points<5
@@ -47,9 +51,19 @@ actions+=/faerie_fire_feral,if=glyph.omen_of_clarity.enabled&talent.omen_of_clar
 actions+=/ferocious_bite,if=combo_points=5&dot.rip.remains>8&buff.savage_roar.remains>8
 actions+=/shred,if=!option.not_behind&combo_points<5
 actions+=/mangle_cat,if=option.not_behind&combo_points<5
-# At 5 points waiting on Rip or Savage Roar: Shred rather than capping energy.
-actions+=/shred,if=!option.not_behind&energy>80
-actions+=/mangle_cat,if=option.not_behind&energy>80
+# At 5 points, Rip and Savage Roar too short for Bite but not due yet: pool
+# energy until whichever runs out first, or Shred before energy caps. Lines
+# are checked when they become usable, so without the wait nothing here would
+# match and the display would go blank (or show a recharging trinket).
+actions+=/variable,name=pool,value=dot.rip.remains-2,if=combo_points=5
+actions+=/variable,name=pool,op=min,value=buff.savage_roar.remains-2,if=combo_points=5
+actions+=/variable,name=pool,op=min,value=energy.time_to_80,if=combo_points=5
+actions+=/wait,sec=variable.pool,if=combo_points=5
+# (2.1, not 2: the wait ends at 2 seconds left, give or take rounding.)
+actions+=/savage_roar,if=combo_points=5&buff.savage_roar.remains<2.1
+actions+=/rip,if=combo_points=5&dot.rip.remains<2.1&target.time_to_die>10
+actions+=/shred,if=!option.not_behind&energy>=75
+actions+=/mangle_cat,if=option.not_behind&energy>=75
 
 ## Cooldowns
 actions.cooldowns=berserk,if=buff.tigers_fury.up|cooldown.tigers_fury.remains>15

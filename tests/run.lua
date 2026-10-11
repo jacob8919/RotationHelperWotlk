@@ -29,6 +29,7 @@ local SUITES = {
     "test_demonology",
     "test_balance",
     "test_feral",
+    "test_feral_gaps",
     "test_marksmanship",
     "test_survival",
     "test_beast_mastery",
