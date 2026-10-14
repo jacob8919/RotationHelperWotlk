@@ -154,3 +154,21 @@ test("next login: a newer version seen before is mentioned; updating clears it",
     RH:GetModule("VersionCheck"):OnEnable()
     eq(RH.db.global.newestVersion, nil, "forgotten")
 end)
+
+test("no Blizzard UI globals are reassigned (that taints them: 'blocked from an action')", function()
+    -- Adding entries (StaticPopupDialogs["X"] = ...) is fine; assigning the
+    -- table itself (StaticPopupDialogs = StaticPopupDialogs or {}) is not.
+    local GLOBALS = { "StaticPopupDialogs", "UISpecialFrames", "UIPanelWindows", "CloseSpecialWindows",
+        "ToggleGameMenu", "StaticPopup_Show", "ChatFrame_OnEvent", "SlashCmdList" }
+    local files = { "UI/VersionCheck.lua", "UI/APLShare.lua", "UI/Options.lua", "UI/Window.lua", "Core.lua" }
+    for _, path in ipairs(files) do
+        local text = io.open("RotationHelper/" .. path):read("*a")
+        for _, name in ipairs(GLOBALS) do
+            for line in text:gmatch("[^\n]+") do
+                if not line:match("^%s*%-%-") and line:match("^%s*" .. name .. "%s*=[^=]") then
+                    error(("%s assigns the global %s: %s"):format(path, name, line), 0)
+                end
+            end
+        end
+    end
+end)

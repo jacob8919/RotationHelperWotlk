@@ -114,7 +114,10 @@ function VersionCheck:ShowPopup()
     StaticPopup_Show("ROTATIONHELPER_UPDATE", RH.db.global.newestVersion, RH.version)
 end
 
-StaticPopupDialogs = StaticPopupDialogs or {}
+-- Only add our entry: assigning the global itself (StaticPopupDialogs =
+-- StaticPopupDialogs or {}) taints Blizzard's popups, and then protected
+-- actions in them get blocked ("RotationHelper has been blocked from an
+-- action only available to the Blizzard UI").
 StaticPopupDialogs["ROTATIONHELPER_UPDATE"] = {
     text = "RotationHelper %s is available (you have %s).\nCopy the download link (Ctrl+C):",
     button1 = OKAY or "OK",
