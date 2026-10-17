@@ -97,6 +97,16 @@ Display.PRESET_NAMES = { hekili = "Hekili (stock)", grambam = "Grambam (compact)
 local HOLD_LABELS = { runes = "RUNES", cooldown = "COOLDOWN", cast = "CAST", wait = "WAIT",
     rage = "RAGE", energy = "ENERGY", ["auto shot"] = "AUTO" }
 
+-- An ability waiting for a buff that forbids it to end (Tiger's Fury during
+-- Berserk): the buff's name, in capitals.
+local function BlockedLabel(entry)
+    local ability = RH.classData and RH.classData.abilities[entry.name]
+    if not (ability and ability.blockedBy and entry.limitedBy == ability.blockedBy) then return nil end
+    local aura = RH.classData.auras[ability.blockedBy]
+    local name = aura and aura.id and GetSpellInfo(aura.id)
+    return (name or ability.blockedBy:gsub("_", " ")):upper()
+end
+
 -- Where each queued icon goes relative to the previous one.
 local GROW = {
     RIGHT = { "LEFT", "RIGHT", 1, 0 },
@@ -769,7 +779,7 @@ function Display:UpdateButton(b, entry, isMain, now)
 
         -- Caption: what the icon waits on, when it's more than a GCD away.
         local hold = d.holdIndicator and wait and wait > (ns.State.real.gcdDuration or 1.5)
-            and HOLD_LABELS[entry.limitedBy]
+            and (HOLD_LABELS[entry.limitedBy] or BlockedLabel(entry))
         if hold then
             SetText(b.hold, hold)
             b.hold:Show()

@@ -108,13 +108,69 @@ test("energy costs: talents, Berserk halves them, Clearcasting makes them free",
     eq(A.SpendsProc(st, "shred", "clearcasting", st.now) ~= nil, true, "glows")
 end)
 
-test("Tiger's Fury when low on energy (60 back with King of the Jungle)", function()
+test("Tiger's Fury when its 60 energy (King of the Jungle) won't cap by the end of the GCD", function()
+    local s, RH = Fight({ setUp = true, energy = 20 })
+    eq(Queue(s, 1), "tigers_fury", "20 energy")
+    eq(s.ns.Abilities.PowerGain(RH.classData.abilities.tigers_fury), 60, "60 energy")
+    s.power.current = 39
+    eq(Queue(s, 1), "tigers_fury", "39 energy, no GCD running: 99 after")
+    s.power.current = 41
+    falsy(Queue(s, 1) == "tigers_fury", "41: would cap")
+    -- Half a GCD left: 5 more energy comes in before the next ability.
+    s.cooldowns["Mark of the Wild"] = { s.time - 0.5, 1 }
+    s.power.current = 34
+    eq(Queue(s, 1), "tigers_fury", "34 energy, 0.5s of GCD left: 99 at its end")
+    s.power.current = 45
+    falsy(Queue(s, 1) == "tigers_fury", "45: would cap")
+end)
+
+test("Tiger's Fury with Clearcasting: 10 energy lower, since the next ability is free", function()
+    local s = Fight({ setUp = true, energy = 35 })
+    eq(Queue(s, 1), "tigers_fury", "35 energy")
+    s:AddAura("player", { name = "Clearcasting", spellId = 16870, duration = 15, expires = s.time + 15 })
+    s.power.current = 35
+    falsy(Queue(s, 1) == "tigers_fury", "35 with Clearcasting: the free Shred doesn't spend any")
+    s.power.current = 25
+    eq(Queue(s, 1), "tigers_fury", "25 with Clearcasting")
+end)
+
+test("Tiger's Fury is part of the rotation: shown with the cooldown toggle off", function()
+    local s, RH = Fight({ setUp = true, energy = 20 })
+    RH.db.profile.toggles.cooldowns = false
+    eq(Queue(s, 1), "tigers_fury", "CD off")
+    RH.db.profile.toggles.cooldowns = true
+    RH.db.profile.display.separateCooldowns = true -- major cooldowns in their own display
+    s:FireEvent("PLAYER_TALENT_UPDATE")
+    eq(Queue(s, 1), "tigers_fury", "separate cooldowns display")
+end)
+
+test("Tiger's Fury can't be used during Berserk: suggested once it ends", function()
+    local s, RH = Fight({ setUp = true, energy = 20 })
+    s:AddAura("player", { name = "Berserk", spellId = 50334, duration = 15, expires = s.time + 3 })
+    local queue = Queue(s, 4)
+    falsy(queue:match("^tigers_fury"), "not now: " .. queue)
+    local recs = s.env.RotationHelper.recommendations
+    local found
+    for _, e in ipairs(recs) do
+        if e.name == "tigers_fury" then found = e end
+    end
+    truthy(found and found.wait > 2.5 and found.limitedBy == "berserk",
+        "after Berserk: " .. queue .. " (" .. tostring(found and found.limitedBy) .. ")")
+    local st = s.ns.State:Reset()
+    local at, limitedBy = s.ns.Abilities.ReadyAt(st, "tigers_fury")
+    near(at - st.now, 2.9, "ready when Berserk ends (0.1s on)", 0.05)
+    eq(limitedBy, "berserk", "limited by Berserk")
+end)
+
+test("Berserk right after Tiger's Fury, never while Tiger's Fury is about to come back", function()
     local s, RH = Fight({ setUp = true, energy = 20 })
     RH.db.profile.toggles.cooldowns = true
-    s.cooldowns["Berserk"] = { s.time, 180 }
-    eq(Queue(s, 1), "tigers_fury", "20 energy")
-    local st = s.ns.State:Reset()
-    eq(s.ns.Abilities.PowerGain(RH.classData.abilities.tigers_fury), 60, "60 energy")
+    eq(Queue(s, 2), "tigers_fury, berserk", "Tiger's Fury, then Berserk")
+    s.cooldowns["Tiger's Fury"] = { s.time - 20, 30 } -- back in 10s: Berserk would block it
+    s.power.current = 80
+    falsy(Queue(s, 3):find("berserk", 1, true), "Berserk waits for Tiger's Fury")
+    s.cooldowns["Tiger's Fury"] = { s.time - 5, 30 } -- back in 25s
+    eq(Queue(s, 1), "berserk", "Berserk when Tiger's Fury is far away")
 end)
 
 test("simulator: Feral", function()
@@ -207,9 +263,11 @@ end)
 test("AoE: Clearcasting makes a Swipe free; with the glyph, Faerie Fire for it", function()
     local s, RH = Fight({ setUp = true, energy = 10 })
     RH.db.profile.toggles.aoeMode = "aoe"
+    s.cooldowns["Tiger's Fury"] = { s.time, 30 } -- (it comes first at 10 energy)
     s:AddAura("player", { name = "Clearcasting", spellId = 16870, duration = 15, expires = s.time + 15 })
     eq(Queue(s, 1), "swipe_cat", "free at 10 energy")
     s = Fight({ setUp = true, glyph = true, energy = 10 })
+    s.cooldowns["Tiger's Fury"] = { s.time, 30 }
     s.env.RotationHelper.db.profile.toggles.aoeMode = "aoe"
     eq(Queue(s, 2), "faerie_fire_feral, swipe_cat +1.0", "glyph")
 end)

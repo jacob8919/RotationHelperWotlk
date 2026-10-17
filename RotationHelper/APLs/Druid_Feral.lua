@@ -9,7 +9,11 @@ local ADDON_NAME, ns = ...
 --   (Shredding rather than capping energy)
 -- Tuned with WoWSims WotLK (docs/WHITEMANE.md, "DPS tuning").
 -- Mangle instead of Shred when you can't get behind (a setting).
--- Tiger's Fury when low on energy, Berserk with the big cooldowns.
+-- Tiger's Fury (60 energy with King of the Jungle, about +8% DPS) whenever
+-- the energy won't cap by the end of the GCD (10 less with Clearcasting, a
+-- free ability coming); it can't be used during Berserk. Never on the CD
+-- toggle: it's part of the rotation. Berserk (with the big cooldowns) right
+-- after a Tiger's Fury, so the next one comes back once Berserk is over.
 -- With Whitemane's Glyph of Omen of Clarity: Faerie Fire on cooldown for a
 -- guaranteed Clearcasting, spent on Shred straight away.
 -- 3+ enemies: Savage Roar, then Swipe (Cat).
@@ -37,8 +41,10 @@ actions=run_action_list,name=bear,if=buff.bear_form.up
 actions+=/cat_form,if=!buff.cat_form.up
 # Big cooldowns follow the CD toggle (bosses only by default).
 actions+=/call_action_list,name=cooldowns,if=toggle.cooldowns
-# Energy (used on trash too).
-actions+=/tigers_fury,if=toggle.short_cooldowns&energy<30
+# Tiger's Fury: 60 energy, as soon as it won't cap by the end of the GCD (10
+# a second comes in; with Clearcasting the next ability is free, so 10 less).
+# The display checks it off the GCD, whenever the energy allows.
+actions+=/tigers_fury,if=energy<40-10*gcd.remains-10*buff.clearcasting.up
 actions+=/run_action_list,name=aoe,if=active_enemies>=3
 actions+=/faerie_fire_feral,if=!debuff.faerie_fire.up
 actions+=/mangle_cat,if=!debuff.mangle.up
@@ -77,6 +83,8 @@ actions+=/shred,if=!option.not_behind&energy>=65
 actions+=/mangle_cat,if=option.not_behind&energy>=65
 
 ## Cooldowns
+# Berserk right after Tiger's Fury (or when Tiger's Fury won't be back during
+# it): Tiger's Fury can't be used while Berserk is up.
 actions.cooldowns=berserk,if=buff.tigers_fury.up|cooldown.tigers_fury.remains>15
 actions.cooldowns+=/berserking
 actions.cooldowns+=/trinket1

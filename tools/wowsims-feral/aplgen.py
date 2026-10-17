@@ -57,7 +57,9 @@ def addon(o=None):
         pool_shred=80,                 # at 5 points, Shred from this energy while waiting
         rake_refresh=1,
         berserk_rule="tf",             # "tf": with Tiger's Fury up or TF far away; "cd": on cooldown
-        tf_energy=30,
+        tf_energy=30,                  # Tiger's Fury below this energy (None: never)
+        tf_cc=0,                       # ...and this much lower with Clearcasting up
+        tf_berserk_block=False,        # the addon's "not during Berserk" (WoWSims forbids it anyway)
         ff_avoid_rip=False,            # don't FF when Rip is due and affordable
         roar_desync=None,              # don't refresh Roar at 5 points within N seconds of Rip
         wait_ff=None,                  # hold Shred/Rake when FF is ready within this many seconds (energy below wait_ff_energy)
@@ -74,7 +76,13 @@ def addon(o=None):
         L.append(cast(BERSERK, OR(buff(TF), gt(cd_left(TF), sec(15)))))
     else:
         L.append(cast(BERSERK))
-    L.append(cast(TF, lt(energy, const(o["tf_energy"]))))
+    if o["tf_energy"] is not None:
+        tfc = [lt(energy, const(o["tf_energy"]))]
+        if o["tf_cc"]:
+            tfc = [OR(AND(NOT(buff(CC)), lt(energy, const(o["tf_energy"]))),
+                      AND(buff(CC), lt(energy, const(o["tf_energy"] - o["tf_cc"]))))]
+        if o["tf_berserk_block"]: tfc.append(NOT(buff(BERSERK)))
+        L.append(cast(TF, AND(*tfc)))
     L.append(cast(FF, NOT(debuff(FFDEBUFF))))
     L.append(cast(MANGLE, NOT(debuff(MANGLE))))
     L.append(cast(ROAR, AND(ge(cp, const(1)), lt(buff_left(ROAR), sec(o["roar_refresh"])))))

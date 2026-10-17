@@ -42,6 +42,13 @@ end
 local function Readiness(entry)
     if entry.wait <= 0.05 then return "Ready now" end
     local on = WAITING_ON[entry.limitedBy]
+    if not on and entry.limitedBy then
+        local ability = RH.classData.abilities[entry.name]
+        if ability and ability.blockedBy == entry.limitedBy then
+            local aura = RH.classData.auras[entry.limitedBy]
+            on = (aura and aura.id and GetSpellInfo(aura.id) or entry.limitedBy) .. " to end"
+        end
+    end
     return ("Ready in %.1fs%s"):format(entry.wait, on and (" (waiting on " .. on .. ")") or "")
 end
 

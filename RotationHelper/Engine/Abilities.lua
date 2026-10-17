@@ -180,6 +180,11 @@ function Abilities.ReadyAt(state, key)
     local cd = state.cooldowns[key]
     local skipsCooldown = ability.ignoreCooldownWith and BuffUpAt(state, ability.ignoreCooldownWith, t)
     if cd and cd.readyAt > t and not skipsCooldown then t, limitedBy = cd.readyAt, "cooldown" end
+    -- A buff that forbids it (Tiger's Fury during Berserk): usable once it ends.
+    if ability.blockedBy then
+        local rec = state.buffs[ability.blockedBy]
+        if rec and rec.expires > t then t, limitedBy = rec.expires, ability.blockedBy end
+    end
 
     local cost = Abilities.PowerCost(ability, state)
     if cost > 0 and PowerAt(state, t) < cost then

@@ -34,6 +34,7 @@ local function Fight(opts)
     s:FireEvent("PLAYER_TALENT_UPDATE")
     s:FireEvent("PLAYER_REGEN_DISABLED")
     RH.db.profile.toggles.cooldowns = opts.cooldowns or false
+    s.cooldowns["Tiger's Fury"] = { s.time - 10, 30 } -- used 10s ago (at 30 energy it'd come first)
     if opts.ttd then s.ns.Targets.TimeToDie = function() return opts.ttd end end
     s:AddAura("player", { name = "Cat Form", spellId = 768, duration = 0, expires = 0 })
     s:AddAura("target", { name = "Faerie Fire (Feral)", spellId = 16857, duration = 300, expires = s.time + 200, harmful = true })
@@ -89,6 +90,7 @@ end)
 
 test("boss, trinket recharging: the gap isn't filled with the trinket", function()
     local s = Fight({ rip = 5, energy = 30, cooldowns = true, trinketUsed = 5 })
+    s.cooldowns["Tiger's Fury"] = { s.time - 25, 30 } -- back in 5s: Berserk waits for it
     local q = Queue(s, 2)
     falsy(q:find("^trinket1"), "trinket first: " .. q)
     eq(q:match("^[^,]+"), "rip +2.9", "pool for Rip")

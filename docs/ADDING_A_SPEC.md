@@ -57,6 +57,7 @@ Ability fields (all optional except `id`):
 | `nextSwing` | an on-next-swing attack (Heroic Strike): not suggested again while queued (`IsCurrentSpell`) |
 | `requiresForm` | the stance or form it needs (`GetShapeshiftForm()` index); skipped otherwise |
 | `usableWith` | a buff that also makes a `reactive` ability usable (Overpower with Taste for Blood) |
+| `blockedBy` | a buff that forbids the ability while it's up (Tiger's Fury during Berserk); it's suggested once the buff ends |
 | `cooldownGroup` | abilities sharing one cooldown (the Shaman shocks) |
 | `totem` + `totemDuration` | a totem of that element (set `usesTotems` in the class data) |
 | `castTime` / `channel` | cast or channel time in base seconds (set `hasteProbe` in the class data: an ability with a fixed `castTime` whose hasted cast time gives your spell haste) |

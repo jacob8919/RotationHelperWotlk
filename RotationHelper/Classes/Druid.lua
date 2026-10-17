@@ -124,8 +124,8 @@ ns.RegisterClass("DRUID", {
         -- Uses up to 30 more energy for more damage.
         ferocious_bite = { id = 48577, energy = 35, finisher = true,
             apply = function(s, spec, fx) s.power = math.max(0, s.power - 30) end },
-        -- King of the Jungle: 20 energy per rank.
-        tigers_fury = { id = 50213, cooldown = 30, offGcd = true,
+        -- King of the Jungle: 20 energy per rank. Can't be used during Berserk.
+        tigers_fury = { id = 50213, cooldown = 30, offGcd = true, blockedBy = "berserk",
             energyGain = function(spec) return 20 * spec:TalentRank("king_of_the_jungle") end,
             apply = function(s, spec, fx) fx.ApplyBuff(s, "tigers_fury", 6) end },
         berserk = { id = 50334, cooldown = 180, offGcd = true,

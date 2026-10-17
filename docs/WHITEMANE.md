@@ -316,6 +316,48 @@ inside Ace callbacks (module `OnEnable`, messages) instead of raising from the h
 `numIcons = 4` after loading because the spec tests read four predictions (the default is 3).
 That surfaced a fixture bug in `test_affliction.lua` (a string damage amount), fixed.
 
+## 10. Tiger's Fury (2026-10-17)
+
+**Reported in game:** the cat rotation never suggested Tiger's Fury (60 energy with King of the Jungle 3/3).
+
+**Causes:** the line was `tigers_fury,if=toggle.short_cooldowns&energy<30`, so it vanished whenever the
+cooldown toggle was off, and also whenever the separate cooldowns display was on (its main-display run
+turns both cooldown flags off). Tiger's Fury is a 30 second energy button, not a cooldown to save, and
+Hekili's Wrath feral list has it unconditional too. The prediction also didn't know that Tiger's Fury
+can't be used while Berserk is up.
+
+**WoWSims** (`tools/wowsims-feral/run.sh tf`, same setup as section 7, 10,000 fights each):
+
+| Tiger's Fury rule | DPS |
+|---|---|
+| never (what the toggle-off display amounted to) | 6,996 (−7.9%) |
+| below 20 energy | 7,594 |
+| below 30 (the old line, toggle on) | 7,599 |
+| **below 40** | **7,600** |
+| below 40, below 30 with Clearcasting | 7,599 |
+| below 30, below 15 with Clearcasting (Hekili's line) | 7,598 |
+| below 50 | 7,596 |
+
+The threshold barely matters (+/− 2.3 is the noise); using it at all is worth about 8%. WoWSims'
+expert rotation uses it when the 60 energy won't cap by the time the GCD is over (`40 − 10 × GCD left`,
+10 lower with Clearcasting since the next ability is free), never during Berserk, and that's the rule
+now, checked off the GCD so the icon appears the moment the energy allows.
+
+**Changes:**
+- `APLs/Druid_Feral.lua`: `tigers_fury,if=energy<40-10*gcd.remains-10*buff.clearcasting.up`, no toggle.
+- `Classes/Druid.lua`: `blockedBy = "berserk"` on Tiger's Fury; new ability field in
+  `Engine/Abilities.lua` (`ReadyAt` waits for the buff to end, `limitedBy` = the aura key), shown as a
+  "BERSERK" hold caption and "waiting on Berserk to end" in the tooltip.
+- Berserk's rule is unchanged (right after a Tiger's Fury, or when it won't be back during Berserk).
+- `tools/wowsims-feral/aplgen.py`: `tf_energy` (None = never), `tf_cc`, `tf_berserk_block` options;
+  `run.sh tf` runs the table above.
+
+**Tests:** `tests/test_feral.lua` (thresholds with and without a running GCD, Clearcasting, toggle off and
+separate cooldowns display, blocked during Berserk, Berserk after Tiger's Fury); the gap tests put Tiger's
+Fury on cooldown since at 30 energy it now comes first. 648 passed, 1 failed (the known `test_fury` rounding; the
+garbage-count test in `test_perf` sits at its limit under lupa and passes on its own).
+
+
 ## Files changed
 
 | File | Change |

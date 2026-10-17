@@ -1,7 +1,7 @@
 ## Interface: 30300
 ## Title: RotationHelper
 ## Notes: Hekili-style rotation helper for WotLK 3.3.5a
-## Version: 1.43.0
+## Version: 1.44.0
 ## SavedVariables: RotationHelperDB
 ## OptionalDeps: Ace3
 

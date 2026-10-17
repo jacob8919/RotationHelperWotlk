@@ -115,7 +115,8 @@ Random procs are never assumed; the icons update as soon as one happens.
   apply right away.
 - **Cooldowns and potions**: big cooldowns, trinkets, racials and potions only show with `CD` /
   `POT` on, and by default only in boss fights. Short cooldowns that are part of the rotation
-  (Shadow Dance, Tiger's Fury, Unbreakable Armor, ...) are used on trash too. A boss is a
+  (Shadow Dance, Unbreakable Armor, ...) are used on trash too; Tiger's Fury (an energy button)
+  shows whatever the toggle says. A boss is a
   skull-level target, anything while boss frames are up, or a name on the built-in list (ICC, ToC,
   Naxxramas, Ulduar, the WotLK dungeons); add more under General > Extra bosses.
 - **Trinkets**: only use effects that help damage are suggested; General > Trinkets shows how

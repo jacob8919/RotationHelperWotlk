@@ -23,6 +23,26 @@ if [ "${1:-}" = bear ]; then
     done
     exit 0
 fi
+if [ "${1:-}" = tf ]; then
+    # Tiger's Fury: when to use it (2026-10-17). "tuned" is the rotation as shipped before.
+    shift
+    T='"bite_rip": 5, "bite_roar": 5, "rake_refresh": 0.1, "pool_shred": 70, "ff_energy": 87, "wait_ff": 0.5, "roar_clip": [3, 10]'
+    python3 aplgen.py "$C/apls" "{
+      \"tuned_tf30\": {$T},
+      \"tf_never\": {$T, \"tf_energy\": null},
+      \"tf20\": {$T, \"tf_energy\": 20},
+      \"tf40\": {$T, \"tf_energy\": 40},
+      \"tf40_cc30\": {$T, \"tf_energy\": 40, \"tf_cc\": 10},
+      \"tf40_cc25\": {$T, \"tf_energy\": 40, \"tf_cc\": 15},
+      \"tf30_cc15\": {$T, \"tf_energy\": 30, \"tf_cc\": 15},
+      \"tf50\": {$T, \"tf_energy\": 50}
+    }"
+    cd "$C/wowsims"
+    "$C/feralcmp" -iters 10000 "$@" "$C"/apls/tuned_tf30.apl.json "$C"/apls/tf_never.apl.json "$C"/apls/tf20.apl.json \
+        "$C"/apls/tf40.apl.json "$C"/apls/tf40_cc30.apl.json "$C"/apls/tf40_cc25.apl.json "$C"/apls/tf30_cc15.apl.json \
+        "$C"/apls/tf50.apl.json 2>&1 | grep -v iterations
+    exit 0
+fi
 python3 aplgen.py "$C/apls" '{
   "addon_tuned": {"bite_rip": 5, "bite_roar": 5, "rake_refresh": 0.1, "pool_shred": 70, "ff_energy": 87,
                   "wait_ff": 0.5, "roar_clip": [3, 10]}
