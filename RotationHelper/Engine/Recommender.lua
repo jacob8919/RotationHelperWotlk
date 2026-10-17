@@ -49,13 +49,16 @@ local MAX_PREDICTIONS = 5
 Recommender.predictedRunes = {} -- [slot] = { type, readyAt } after the predicted actions
 
 -- Reused so updates don't create garbage. The AoE set is for the dual
--- display's second display.
-local recommendations = {}
-local entries = {}
-for i = 1, MAX_PREDICTIONS do entries[i] = {} end
-local aoeRecommendations = {}
-local aoeEntries = {}
-for i = 1, MAX_PREDICTIONS do aoeEntries[i] = {} end
+-- display's second display, the cooldown set for the separate cooldowns
+-- display.
+local function NewPool()
+    local pool = {}
+    for i = 1, MAX_PREDICTIONS do pool[i] = {} end
+    return pool
+end
+local recommendations, entries = {}, NewPool()
+local aoeRecommendations, aoeEntries = {}, NewPool()
+local cdRecommendations, cdEntries = {}, NewPool()
 
 function Recommender:OnEnable()
     self.compiled = {} -- spec key -> compiled APL, or false if there is none
@@ -63,7 +66,9 @@ function Recommender:OnEnable()
     self.resolver = ns.Expressions.CreateResolver(RH.classData)
     -- After an error, clear the icons: stale advice is worse than none.
     RH:RegisterUpdater(function(_, now) Recommender:Update(now) end, RH.UPDATE_ORDER.RECOMMEND,
-        "recommendations", function() RH.recommendations, RH.alternative, RH.aoeRecommendations = nil, nil, nil end)
+        "recommendations", function()
+            RH.recommendations, RH.alternative, RH.aoeRecommendations, RH.cooldownRecommendation = nil, nil, nil, nil
+        end)
     -- A profile switch can change the custom rotations.
     self:RegisterMessage("ROTATIONHELPER_CONFIG_CHANGED", "Reset")
     -- A spell that just landed (see ApplyLanded).
@@ -358,12 +363,18 @@ end
 --
 -- For the dual display's AoE icons, `enemies` overrides the enemy count and
 -- the results go to the AoE tables (the rune prediction is left alone).
-function Recommender:Predict(count, trace, enemies)
+-- `cooldowns` = false turns the cooldown toggles off (both the boss-only
+-- one and the short cooldowns) to keep major cooldowns out of the main
+-- queue for the separate cooldowns display, which gets its own run with
+-- them as toggled (`which` = "cd").
+function Recommender:Predict(count, trace, enemies, cooldowns, which)
     local out, pool = recommendations, entries
     if enemies then out, pool = aoeRecommendations, aoeEntries end
+    if which == "cd" then out, pool = cdRecommendations, cdEntries end
     local now = State.real.now
     local v = State:Virtual()
     if enemies then v.activeEnemies = enemies end
+    if cooldowns == false then v.cooldownsEnabled, v.shortCooldownsEnabled = false, false end
     local n = 0
     -- Channelling for real: maybe cut it after the next tick. Ticks are
     -- counted from its start, shifted like its end by the lookahead.
@@ -392,7 +403,7 @@ function Recommender:Predict(count, trace, enemies)
         self:ClipChannel(v, action.name, readyAt)
     end
     for i = n + 1, #out do out[i] = nil end
-    if enemies then return out, n end
+    if enemies or which == "cd" then return out, n end
     -- The runes once the predicted actions are used (the rune bar, F1).
     local predicted = self.predictedRunes
     for i, rune in ipairs(v.runes) do
@@ -403,18 +414,42 @@ function Recommender:Predict(count, trace, enemies)
     return recommendations, n
 end
 
+-- With the separate cooldowns display: the first major cooldown the
+-- rotation would use with cooldowns on, or nil.
+function Recommender:CooldownRecommendation()
+    local lists = RH.classData.majorCooldowns
+    if not lists or not (State.real.cooldownsEnabled or State.real.shortCooldownsEnabled) then return nil end
+    local recs, n = self:Predict(MAX_PREDICTIONS, nil, nil, true, "cd")
+    for i = 1, n do
+        local name = recs[i].name
+        for _, key in ipairs(lists) do
+            if key == name then return recs[i] end
+        end
+    end
+    return nil
+end
+
 function Recommender:Update(now)
     State:Reset(now)
-    local recs, n = self:Predict(RH.db.profile.display.numIcons)
+    local d = RH.db.profile.display
+    local t = State.real.target
+    local hostile = t.exists and t.canAttack and not t.dead
+    now = now or State.real.now
+    -- The enemies around, before the AoE mode's say (for the icons' counts).
+    RH.detectedEnemies = ns.Targets:ActiveEnemies(now, "auto", hostile)
+    -- Separate cooldowns display: major cooldowns leave the main queue.
+    local separate = d.separateCooldowns and (State.real.cooldownsEnabled or State.real.shortCooldownsEnabled)
+    local cooldowns = nil
+    if separate then cooldowns = false end
+    local recs, n = self:Predict(d.numIcons, nil, nil, cooldowns)
     RH.recommendations = n > 0 and recs or nil
     RH.alternative = self:Alternative(recs, n)
     RH.aoeRecommendations = nil
-    if RH.db.profile.display.dualDisplay then
+    if d.dualDisplay then
         -- The real count when there are more, but at least 3.
-        local t = State.real.target
-        local enemies = ns.Targets:ActiveEnemies(now or State.real.now, "aoe", t.exists and t.canAttack and not t.dead)
-        local d = RH.db.profile.display
-        local aoe, an = self:Predict(d.aoeNumIcons or d.numIcons, nil, enemies)
+        local enemies = ns.Targets:ActiveEnemies(now, "aoe", hostile)
+        local aoe, an = self:Predict(d.aoeNumIcons or d.numIcons, nil, enemies, cooldowns)
         RH.aoeRecommendations = an > 0 and aoe or nil
     end
+    RH.cooldownRecommendation = separate and self:CooldownRecommendation() or nil
 end

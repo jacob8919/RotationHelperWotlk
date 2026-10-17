@@ -26,6 +26,7 @@ local function Fight()
     s:FireEvent("PLAYER_TALENT_UPDATE")
     s:FireEvent("PLAYER_REGEN_DISABLED")
     RH.db.profile.display.locked = true
+    RH.db.profile.display.castSlot = true
     RH.db.profile.toggles.cooldowns = false
     s:AddAura("player", { name = "Fel Armor", spellId = 47893, duration = 1800, expires = s.time + 1800 })
     s:AddAura("target", { name = "Immolate", spellId = 47811, duration = 15, expires = s.time + 12, harmful = true })

@@ -66,12 +66,12 @@ test("tinted for range and runic power", function()
     s.targetCast = { name = "Shadow Bolt", endsIn = 2 }
     s.range["Mind Freeze"] = 0
     s:Tick(0.1)
-    eq(Button(s).icon.vertexColor[2], 0.25, "red: out of range")
+    eq(Button(s).icon.vertexColor[2], 0, "red: out of range")
     s.range["Mind Freeze"] = 1
     s.power.current = 10
     s:Tick(0.1)
-    eq(Button(s).icon.vertexColor[3], 1, "blue: not enough runic power")
-    eq(Button(s).icon.vertexColor[1], 0.4, "blue (r)")
+    eq(Button(s).icon.vertexColor[3], 0.4, "grey: not enough runic power")
+    eq(Button(s).icon.vertexColor[1], 0.4, "grey (r)")
 end)
 
 test("hidden when not learned, for friendly targets, or turned off", function()
@@ -91,14 +91,25 @@ test("hidden when not learned, for friendly targets, or turned off", function()
     falsy(Button(s):IsShown(), "not learned")
 end)
 
-test("a sample is shown while the display is unlocked, above the main icon", function()
-    local s = Fight()
+test("a sample is shown while the display is unlocked, in its own movable display", function()
+    local s, RH = Fight()
     s:Slash("ACECONSOLE_RH", "lock") -- unlock again
     s:Tick(0.1)
     truthy(Button(s):IsShown(), "sample shown")
-    local point, rel, relPoint = Button(s):GetPoint(1)
-    eq(point .. "/" .. relPoint, "BOTTOMLEFT/TOPLEFT", "above")
-    eq(rel, s.ns.Display.buttons[1], "the main icon")
+    local f = s.ns.Interrupt.frame
+    eq(f:GetName(), "RotationHelperInterruptDisplay", "its own frame")
+    truthy(f:IsShown() and f.mover:IsShown(), "with the box to drag it by")
+    eq(f.mover.header:GetText(), "Interrupts", "named like Hekili's")
+    local point, _, relPoint, x, y = f:GetPoint(1)
+    eq(point .. "/" .. relPoint .. " " .. x .. "," .. y, "CENTER/CENTER -55,-225", "left of the main display, like Hekili's")
+    f:ClearAllPoints()
+    f:SetPoint("TOPLEFT", s.env.UIParent, "TOPLEFT", 10, -20)
+    f.mover.scripts.OnDragStop(f.mover)
+    eq(table.concat(RH.db.profile.display.interruptPoint, ","), "TOPLEFT,UIParent,TOPLEFT,10,-20", "position saved")
+    s:Slash("ACECONSOLE_RH", "lock")
+    s:Tick(0.1)
+    falsy(f.mover:IsShown(), "box gone once locked")
+    falsy(f:IsShown(), "and nothing to interrupt")
 end)
 
 test("the interrupt icon never flashes (only the main icon does)", function()

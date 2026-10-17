@@ -1,9 +1,11 @@
 local ADDON_NAME, ns = ...
 local RH = ns.RH
 
--- A separate small icon for the class's interrupt (Death Knight: Mind
--- Freeze), shown above the main icon only while the hostile target casts
--- or channels something interruptible. It never takes a rotation slot.
+-- The interrupt display (Hekili's "Interrupts"): one icon for the class's
+-- interrupt (Death Knight: Mind Freeze), shown only while the hostile
+-- target casts or channels something interruptible. It never takes a
+-- rotation slot, and has its own position (display.interruptPoint) and
+-- size (display.interruptSize); it moves while unlocked.
 --
 -- Hidden when the interrupt isn't known, or its cooldown won't be over
 -- before the cast ends. Keybind, range and runic power tints and the
@@ -50,6 +52,7 @@ function Interrupt:GetEntry(s, now)
     local cdRemains = cd and max(0, cd.readyAt - s.now) or 0
     if cdRemains > castRemains then return nil end -- can't make it
 
+    entry.name = key
     entry.spellId = ability.id
     entry.wait = cdRemains
     entry.lacksResources = s.power < ns.Abilities.RunicPowerCost(ability)
@@ -58,30 +61,63 @@ end
 
 function Interrupt:Create()
     local Display = ns.Display
-    local b = Display.CreateButton(Display.frame, "RotationHelperInterruptButton", false)
+    local f = CreateFrame("Frame", "RotationHelperInterruptDisplay", UIParent)
+    f:SetMovable(true)
+    f:SetClampedToScreen(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function(frame) frame:StartMoving() end)
+    f:SetScript("OnDragStop", function(frame)
+        frame:StopMovingOrSizing()
+        Interrupt:SavePosition()
+    end)
+    f.SavePosition = function() Interrupt:SavePosition() end
+    f:Hide()
+    self.frame = f
+    local b = Display.CreateButton(f, "RotationHelperInterruptButton")
+    b:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
     self.button = b
+    ns.Mover.Create(f, "Interrupts", ns.Mover.OpenDisplaySettings)
     self:Layout()
 end
 
+function Interrupt:SavePosition()
+    local point, _, relPoint, x, y = self.frame:GetPoint(1)
+    RH.db.profile.display.interruptPoint = { point, "UIParent", relPoint, x, y }
+end
+
 function Interrupt:Layout()
-    local b, d = self.button, RH.db.profile.display
-    local size = d.iconSize * d.queueScale
-    b:ClearAllPoints()
-    -- Above the main icon, clear of the "drag to move" label.
-    b:SetPoint("BOTTOMLEFT", ns.Display.buttons[1], "TOPLEFT", 0, 20)
+    local f, b, d = self.frame, self.button, RH.db.profile.display
+    local size = d.interruptSize or d.iconSize
+    f:ClearAllPoints()
+    local p = d.interruptPoint
+    f:SetPoint(p[1], _G[p[2]] or UIParent, p[3], p[4], p[5])
+    f:SetScale(d.scale)
+    f:SetWidth(size)
+    f:SetHeight(size)
+    f:EnableMouse(not d.locked)
+    ns.Display.StyleButton(b, d)
     ns.Display.SetButtonSize(b, size)
+    if d.locked then
+        f.mover:Hide()
+    else
+        ns.Mover.Layout(f.mover, b, b, b, b, not d.interrupt)
+        f.mover:Show()
+    end
 end
 
 function Interrupt:Update(now)
     local Display = ns.Display
     if not Display.frame then return end
     if not self.button then self:Create() end
-    local shownEntry = RH.db.profile.display.interrupt and Display.frame:IsShown()
+    local d = RH.db.profile.display
+    local shownEntry = d.interrupt and (Display.frame:IsShown() or not d.locked)
         and self:GetEntry(ns.State.real, now)
     if shownEntry then
         Display:UpdateButton(self.button, shownEntry, true, now)
+        self.frame:Show()
     else
         self.button:Hide()
+        if d.locked then self.frame:Hide() end
     end
 end
 
@@ -96,7 +132,9 @@ function Interrupt:OnEnable()
         self:RegisterEvent(event, OnTargetCast)
     end
     self:RegisterMessage("ROTATIONHELPER_CONFIG_CHANGED", function()
-        if Interrupt.button then Interrupt:Layout() end
+        if not Interrupt.button then Interrupt:Create() end
+        Interrupt:Layout()
+        if not RH.db.profile.display.locked then Interrupt.frame:Show() end
     end)
     -- After the display, which decides whether the display is shown.
     RH:RegisterUpdater(function(_, now) Interrupt:Update(now) end, RH.UPDATE_ORDER.INTERRUPT,

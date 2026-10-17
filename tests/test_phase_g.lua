@@ -21,6 +21,7 @@ local function Fight()
     s.hasTarget = true
     s:FireEvent("PLAYER_REGEN_DISABLED")
     RH.db.profile.toggles.cooldowns = false
+    RH.db.profile.display.showStatus = true -- the "2/3 DIS" status text is checked
     s:Slash("ACECONSOLE_RH", "lock")
     s:AddAura("player", { name = "Horn of Winter", spellId = 57623, duration = 120, expires = s.time + 900 })
     return s, RH

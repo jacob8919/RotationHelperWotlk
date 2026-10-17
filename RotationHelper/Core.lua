@@ -78,6 +78,7 @@ function ns.RegisterAPL(classToken, specKey, name, text, options)
 end
 
 local AOE_MODES = { "auto", "single", "aoe" }
+local AOE_MODE_NAMES = { auto = "Automatic", single = "Single Target", aoe = "AOE" }
 
 local defaults = {
     global = {
@@ -146,42 +147,70 @@ local defaults = {
         },
         display = {
             locked = false,
+            -- Hekili's stock look (see Display.PRESETS for the layouts):
+            -- 50px icons in a row, 5px apart, three of them.
+            preset = "hekili", -- the last layout preset applied (for "Reset positions")
             scale = 1.0,
-            numIcons = 4,
+            numIcons = 3,
             iconSize = 50,
-            queueScale = 0.8, -- queued icons relative to the main icon
-            spacing = 4,
+            queueSize = 50,   -- queued icons, in pixels
+            spacing = 5,
             direction = "RIGHT", -- RIGHT | LEFT | UP | DOWN
+            zoom = 30,        -- % of the icon's edge trimmed off (30 removes the baked-in border)
+            border = 1,       -- border thickness around each icon, 0 for none
+            borderColor = { 0, 0, 0, 1 },
+            borderClassColor = false,
+            fontSize = 12,    -- the keybind, delay and enemy count texts (Arial Narrow, outlined)
+            keybindQueued = true, -- keybinds on the queued icons too
+            targetCount = true,   -- enemy count in the bottom-right corner of the main icon
+            delayType = "TEXT",   -- TEXT (seconds) | ICON (colored dot) | NONE: the wait beyond the cooldown
+            highlightCurrent = true, -- the action button highlight while the main icon's spell is being cast
+            procGlow = true,       -- glow on the main icon when its ability spends a proc (Killing Machine, Rime)
+            glowMode = "autocast", -- autocast | pixel | button (see UI/Glow.lua)
+            glowColor = { 0.95, 0.95, 0.32, 1 },
+            glowClassColor = false,
+            glowQueued = false,    -- glow on queued icons too
+            glowScale = 1,
+            notifications = true,  -- toggles announced at the middle of the screen (UI/Notify.lua)
+            notifyPoint = { "CENTER", "UIParent", "CENTER", 0, 0 },
             hideOutOfCombat = false,
-            showStatus = true, -- toggle states under the main icon
-            pressFlash = true, -- flash the main icon when it can be pressed
-            castSlot = true,   -- while casting: the spell being cast slides out beside the main icon
-            interrupt = true,  -- interrupt icon while the target casts something interruptible
             shiftInteract = true, -- Shift: tooltips on the icons, clickable CD / AoE
-            procGlow = true,   -- glow on icons that spend a proc (Killing Machine, Rime)
-            procBadge = true,  -- the proc's icon in the corner when it's why an ability is recommended
-            procSound = "none", -- PlaySound name for a new proc, or "none"
-            holdIndicator = true, -- label what the main icon waits on when it's more than a GCD away
-            alternative = true,   -- in-range alternative when the main ability is out of range
-            runeBar = true,       -- runes above the icons, with their type after the predicted actions
-            cooldownStrip = true, -- major cooldowns and trinkets with the time left
-            timeline = false,     -- queued icons placed by when they're usable
-            colors = {            -- see Display.COLOR_PRESETS
-                outOfRange = { 1, 0.25, 0.25 },
-                noResources = { 0.4, 0.5, 1 },
+            interrupt = true,     -- interrupt display while the target casts something interruptible
+            interruptSize = 50,
+            interruptPoint = { "CENTER", "UIParent", "CENTER", -55, -225 },
+            separateCooldowns = false, -- major cooldowns in their own one-icon display
+            cooldownSize = 50,
+            cooldownPoint = { "CENTER", "UIParent", "CENTER", 0, -280 },
+            -- Our extras, off in the Hekili look.
+            showStatus = false,  -- CD / POT / AoE chips and waste labels under the main icon
+            pressFlash = false,  -- flash the main icon when it can be pressed
+            castSlot = false,    -- while casting: the spell being cast slides out beside the main icon
+            procBadge = false,   -- the proc's icon in the corner when it's why an ability is recommended
+            procSound = "none",  -- PlaySound name for a new proc, or "none"
+            holdIndicator = false, -- caption what the main icon waits on when it's more than a GCD away
+            alternative = false,   -- in-range alternative when the main ability is out of range
+            warningBorders = false, -- the pulsing waste border and the threat border on the main icon
+            runeBar = false,       -- runes above the icons, with their type after the predicted actions
+            cooldownStrip = false, -- major cooldowns and trinkets with the time left
+            timeline = false,      -- queued icons placed by when they're usable
+            colors = {             -- see Display.COLOR_PRESETS
+                outOfRange = { 1, 0, 0 },
+                noResources = { 0.4, 0.4, 0.4 },
                 waste = { 1, 0.5, 0 },
                 threat = { 0.9, 0.1, 0.1 },
             },
-            point = { "CENTER", "UIParent", "CENTER", 0, -150 },
-            -- Dual display (like Hekili's): the main display shows the single
-            -- target priority and a second one the AoE priority, side by side.
+            point = { "CENTER", "UIParent", "CENTER", 0, -225 },
+            -- Dual display (Hekili's): the main display shows the single
+            -- target priority and a second one the AoE priority. Reactive:
+            -- the AoE display only shows with 3+ enemies.
             dualDisplay = false,
-            aoePoint = { "CENTER", "UIParent", "CENTER", 0, -240 },
+            reactiveAoE = false,
+            aoePoint = { "CENTER", "UIParent", "CENTER", 0, -170 },
             -- The AoE display's own size (spacing and direction follow the main display).
             aoeScale = 1.0,
             aoeIconSize = 50,
-            aoeQueueScale = 0.8,
-            aoeNumIcons = 4,
+            aoeQueueSize = 50,
+            aoeNumIcons = 3,
         },
     },
 }
@@ -413,6 +442,7 @@ function RH:ToggleCooldowns()
     local t = self.db.profile.toggles
     t.cooldowns = not t.cooldowns
     self:Print("Cooldowns: " .. Utils.OnOff(t.cooldowns) .. (t.cooldowns and t.cooldownsBossOnly and " (bosses only)" or ""))
+    ns.Notify("Cooldowns: " .. (t.cooldowns and "ON" or "OFF"))
     self:SettingChangedOutsideOptions()
 end
 
@@ -421,6 +451,7 @@ function RH:ToggleConsumables()
     t.consumables = not t.consumables
     local note = t.consumables and self.db.profile.items.consumablesBossOnly and " (bosses only)" or ""
     self:Print("Consumables: " .. Utils.OnOff(t.consumables) .. note)
+    ns.Notify("Potions: " .. (t.consumables and "ON" or "OFF"))
     self:SettingChangedOutsideOptions()
 end
 
@@ -432,13 +463,15 @@ function RH:CycleAoEMode()
     end
     t.aoeMode = AOE_MODES[nextIndex]
     self:Print("AoE mode: " .. Utils.Colorize(t.aoeMode, "ffd100"))
+    ns.Notify("Mode: " .. AOE_MODE_NAMES[t.aoeMode])
     self:SettingChangedOutsideOptions()
 end
 
 function RH:ToggleDualDisplay()
     local d = self.db.profile.display
     d.dualDisplay = not d.dualDisplay
-    self:Print("Dual display " .. (d.dualDisplay and "on: single target above, AoE below." or "off."))
+    self:Print("Dual display " .. (d.dualDisplay and "on: single target and AoE side by side." or "off."))
+    ns.Notify("Mode: " .. (d.dualDisplay and (d.reactiveAoE and "Reactive Dual" or "Dual") or AOE_MODE_NAMES[self.db.profile.toggles.aoeMode]))
     self:SettingChangedOutsideOptions()
 end
 
@@ -446,6 +479,7 @@ function RH:TogglePause()
     local p = self.db.profile
     p.paused = not p.paused
     self:Print(p.paused and "Paused." or "Resumed.")
+    ns.Notify(p.paused and "PAUSED" or "UNPAUSED")
     self:SettingChangedOutsideOptions()
 end
 
@@ -490,6 +524,13 @@ local function SetDisplayNumber(self, key, label, arg, minValue, maxValue, integ
     self.db.profile.display[key] = value
     self:Print(("%s set to %s."):format(label, value))
     self:SettingChangedOutsideOptions()
+end
+
+-- /rh preset hekili|grambam: a layout preset (Display.PRESETS).
+function RH:SetPreset(arg)
+    if not self:ApplyPreset((arg or ""):lower()) then
+        self:Print("Usage: /rh preset <hekili|grambam>")
+    end
 end
 
 function RH:SetScale(arg)
@@ -552,6 +593,7 @@ local HELP = {
     { "pull <seconds>", "start a pull timer for the rotation (DBM/BigWigs timers work too; 0 cancels)" },
     { "perf", "show CPU and memory use (/rh perf reset to start over)" },
     { "errors", "show recorded errors (/rh errors clear to empty the list)" },
+    { "preset <name>", "layout preset: hekili (stock) or grambam (compact)" },
     { "scale <n>", "display scale (0.5-3)" },
     { "icons <n>", "number of icons shown (1-5)" },
     { "aoescale <n>", "AoE display scale (0.5-3), with the dual display" },
@@ -610,6 +652,7 @@ local commands = {
     sim = "PrintSim",
     damage = "PrintDamage",
     pull = "StartPullTimer",
+    preset = "SetPreset",
     scale = "SetScale",
     icons = "SetIconCount",
     aoescale = "SetAoEScale",

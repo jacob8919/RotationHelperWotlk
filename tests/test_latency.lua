@@ -88,6 +88,7 @@ end)
 local function CountingDown(seconds)
     local s, RH = Fight()
     s:Slash("ACECONSOLE_RH", "lock")
+    RH.db.profile.display.pressFlash = true
     for i = 1, 6 do s.runes[i].readyAt = s.time + seconds end
     s.cooldowns["Horn of Winter"] = { s.time, 20 }
     return s, RH

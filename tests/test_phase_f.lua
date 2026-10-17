@@ -18,6 +18,7 @@ local function Fight()
     s.hasTarget = true
     s:FireEvent("PLAYER_REGEN_DISABLED")
     RH.db.profile.toggles.cooldowns = false
+    RH.db.profile.display.runeBar, RH.db.profile.display.cooldownStrip = true, true
     s:Slash("ACECONSOLE_RH", "lock")
     s:AddAura("target", { name = "Frost Fever", spellId = 55095, duration = 15, expires = s.time + 900, harmful = true })
     s:AddAura("target", { name = "Blood Plague", spellId = 55078, duration = 15, expires = s.time + 900, harmful = true })
@@ -134,7 +135,7 @@ test("timeline: queued icons placed by time; waits show as gaps", function()
     s.power.current = 0
     Setting(s, RH, "timeline", true)
     local recs = RH.recommendations
-    local step = d.iconSize * d.queueScale + d.spacing
+    local step = d.queueSize + d.spacing
     local gcd = s.ns.State.real.gcdDuration
     local perSecond = step / gcd
     local origin = recs[1].wait + gcd

@@ -1,13 +1,19 @@
 local ADDON_NAME, ns = ...
 local RH = ns.RH
 
--- The recommendation display: one large icon for the next action plus
--- smaller icons for the predicted queue.
+-- The recommendation display, drawn like Hekili's: one icon for the next
+-- action and a queue of predicted ones, each with its border, cooldown
+-- swipe and keybind, and on the main icon the enemy count, the delay and
+-- the proc glow.
 --
 -- It renders RH.recommendations, an array of entries set by the engine:
---   { spellId = 51425, wait = 0.4, lacksResources = false }
--- `wait` is seconds until the action is usable and drives the cooldown
--- swipe on the main icon.
+--   { name = "obliterate", spellId = 51425, wait = 0.4, lacksResources = false }
+-- `wait` is seconds until the action is usable and drives the swipe on
+-- the main icon (queued icons show their spell's real cooldown, GCD
+-- included, as Hekili does).
+--
+-- The icon button (CreateButton / UpdateButton) is shared with the AoE,
+-- interrupt and cooldown displays.
 --
 -- While you cast or channel (display.castSlot), the spell being cast gets
 -- its own icon: it slides out beside the main icon and shrinks as the cast
@@ -16,16 +22,18 @@ local Display = RH:NewModule("Display", "AceEvent-3.0")
 ns.Display = Display
 
 local GetSpellInfo, GetTime, UnitExists, IsSpellInRange = GetSpellInfo, GetTime, UnitExists, IsSpellInRange
+local IsUsableSpell, IsCurrentSpell, GetSpellCooldown = IsUsableSpell, IsCurrentSpell, GetSpellCooldown
 local PlaySound = PlaySound
-local abs = math.abs
+local abs, max, min, floor = math.abs, math.max, math.min, math.floor
 
 local MAX_ICONS = 5
 local FLASH_DURATION = 0.3
 local FLASH_ALPHA = 0.55
 local WARN_PULSE_SPEED = 5 -- radians per second
 local WHITE = "Interface\\Buttons\\WHITE8X8"
-local GLOW_TEXTURE = "Interface\\Buttons\\UI-ActionButton-Border"
-local GLOW_SCALE = 1.75 -- the glow ring sits in the middle of that texture
+local HIGHLIGHT = "Interface\\Buttons\\ButtonHilight-Square"
+local DELAY_DOT = "Interface\\FriendsFrame\\StatusIcon-Online"
+local FONT = "Fonts\\ARIALN.TTF" -- Arial Narrow, Hekili's font on the icons
 local BADGE_SCALE = 0.42 -- proc badge size relative to the icon
 local STATUS_HEIGHT = 14
 local CHIP_GAP = 6
@@ -35,16 +43,18 @@ local CAST_MIN_ALPHA = 0.5
 
 -- Sounds for a new proc (PlaySound names in the 3.3.5 client).
 Display.PROC_SOUNDS = { none = "None", MapPing = "Ping", RaidWarning = "Raid warning", ReadyCheck = "Ready check" }
+Display.DELAY_TYPES = { TEXT = "Seconds (top left)", ICON = "Colored dot (top left)", NONE = "None" }
 
 local TINT_NORMAL = { 1, 1, 1 }
 
 -- Color presets for the configurable colors (profile.display.colors).
--- The color-blind friendly one uses the Okabe-Ito palette, whose colors
--- stay distinguishable with the common kinds of color blindness.
+-- The defaults are Hekili's: out of range is desaturated red, unusable
+-- is dark grey. The color-blind friendly one uses the Okabe-Ito palette,
+-- whose colors stay distinguishable with the common kinds of color blindness.
 Display.COLOR_PRESETS = {
     default = {
-        outOfRange = { 1, 0.25, 0.25 },
-        noResources = { 0.4, 0.5, 1 },
+        outOfRange = { 1, 0, 0 },
+        noResources = { 0.4, 0.4, 0.4 },
         waste = { 1, 0.5, 0 },
         threat = { 0.9, 0.1, 0.1 },
     },
@@ -56,7 +66,34 @@ Display.COLOR_PRESETS = {
     },
 }
 
--- What the main icon waits on, when it's more than a GCD away.
+-- Layout presets: Hekili's stock look, and the compact one from the
+-- user's own Hekili settings (32px main icon, 30px queue almost touching,
+-- the AoE display to the right and only shown with 3+ enemies).
+-- Applied with RH:ApplyPreset; everything stays editable afterwards.
+Display.PRESETS = {
+    hekili = {
+        numIcons = 3, iconSize = 50, queueSize = 50, spacing = 5, direction = "RIGHT", scale = 1,
+        point = { "CENTER", "UIParent", "CENTER", 0, -225 },
+        aoeNumIcons = 3, aoeIconSize = 50, aoeQueueSize = 50, aoeScale = 1,
+        aoePoint = { "CENTER", "UIParent", "CENTER", 0, -170 },
+        interruptSize = 50, interruptPoint = { "CENTER", "UIParent", "CENTER", -55, -225 },
+        cooldownSize = 50, cooldownPoint = { "CENTER", "UIParent", "CENTER", 0, -280 },
+        dualDisplay = false, reactiveAoE = false,
+    },
+    grambam = {
+        numIcons = 3, iconSize = 32, queueSize = 30, spacing = 1, direction = "RIGHT", scale = 1,
+        point = { "CENTER", "UIParent", "CENTER", -25, -140 },
+        aoeNumIcons = 3, aoeIconSize = 30, aoeQueueSize = 30, aoeScale = 1,
+        aoePoint = { "CENTER", "UIParent", "CENTER", 91, -140 },
+        interruptSize = 50, interruptPoint = { "CENTER", "UIParent", "CENTER", -149, -203 },
+        cooldownSize = 50, cooldownPoint = { "CENTER", "UIParent", "CENTER", -89, -148 },
+        dualDisplay = true, reactiveAoE = true,
+    },
+}
+Display.PRESET_NAMES = { hekili = "Hekili (stock)", grambam = "Grambam (compact)" }
+
+-- What the main icon waits on, when it's more than a GCD away (the
+-- optional caption at the bottom of the icon).
 local HOLD_LABELS = { runes = "RUNES", cooldown = "COOLDOWN", cast = "CAST", wait = "WAIT",
     rage = "RAGE", energy = "ENERGY", ["auto shot"] = "AUTO" }
 
@@ -141,32 +178,82 @@ local function SpellInfo(spellId)
 end
 
 ---------------------------------------------------------------------------
--- Frame construction
+-- The icon button (Hekili's button, part for part)
 ---------------------------------------------------------------------------
--- Creates an icon button (also used by the interrupt icon). `large` picks
--- the bigger keybind font used on the main icon.
-function Display.CreateButton(parent, name, large)
+-- The icon fills the button; a border frame sits outside it, a frame
+-- level below. The cooldown swipe covers the icon; the corner texts and
+-- the proc badge sit on an overlay above the swipe:
+--   top right      keybind
+--   top left       delay (seconds until the engine says to press, when
+--                  that's beyond the cooldown already shown)
+--   bottom right   enemy count (main icon)
+--   bottom         caption: what the icon waits on (optional)
+-- Also used by the AoE, interrupt and cooldown displays.
+function Display.CreateButton(parent, name)
     local b = CreateFrame("Frame", name, parent)
-    b:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
-    b:SetBackdropColor(0, 0, 0, 0.6)
-    b:SetBackdropBorderColor(0, 0, 0, 1)
 
     b.icon = b:CreateTexture(nil, "ARTWORK")
-    b.icon:SetPoint("TOPLEFT", 1, -1)
-    b.icon:SetPoint("BOTTOMRIGHT", -1, 1)
-    b.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    b.icon:SetAllPoints(b)
+
+    -- Border, outside the icon and under it.
+    local border = CreateFrame("Frame", nil, b)
+    border:SetFrameLevel(max(0, b:GetFrameLevel() - 1))
+    border:SetPoint("CENTER", b, "CENTER")
+    border:Hide()
+    b.border = border
 
     b.cooldown = CreateFrame("Cooldown", nil, b, "CooldownFrameTemplate")
     b.cooldown:SetAllPoints(b.icon)
+    b.cooldown:SetFrameLevel(b:GetFrameLevel() + 1)
+    if b.cooldown.SetDrawEdge then b.cooldown:SetDrawEdge(false) end
+    if b.cooldown.SetDrawBling then b.cooldown:SetDrawBling(false) end
     b.cooldown:Hide()
 
-    -- Keybind text sits above the cooldown swipe.
+    -- Texts sit above the cooldown swipe.
     b.overlay = CreateFrame("Frame", nil, b)
     b.overlay:SetAllPoints(b)
     b.overlay:SetFrameLevel(b.cooldown:GetFrameLevel() + 1)
-    b.key = b.overlay:CreateFontString(nil, "OVERLAY", large and "NumberFontNormal" or "NumberFontNormalSmall")
-    b.key:SetPoint("TOPRIGHT", -2, -3)
+
+    b.key = b.overlay:CreateFontString(nil, "OVERLAY")
+    b.key:SetPoint("TOPRIGHT", b, "TOPRIGHT", 1, -1)
     b.key:SetJustifyH("RIGHT")
+    b.key:SetJustifyV("TOP")
+    b.key:SetTextColor(1, 1, 1)
+
+    b.delay = b.overlay:CreateFontString(nil, "OVERLAY")
+    b.delay:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
+    b.delay:SetJustifyH("LEFT")
+    b.delay:SetJustifyV("TOP")
+    b.delay:SetTextColor(1, 1, 1)
+
+    b.delayIcon = b.overlay:CreateTexture(nil, "OVERLAY")
+    b.delayIcon:SetTexture(DELAY_DOT)
+    b.delayIcon:SetDesaturated(true)
+    b.delayIcon:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
+    b.delayIcon:Hide()
+
+    b.targets = b.overlay:CreateFontString(nil, "OVERLAY")
+    b.targets:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0)
+    b.targets:SetJustifyH("RIGHT")
+    b.targets:SetJustifyV("BOTTOM")
+    b.targets:SetTextColor(1, 1, 1)
+
+    -- Caption: what the main icon waits on (RUNES, COOLDOWN, ...), and the
+    -- time left on the cast icon.
+    b.hold = b.overlay:CreateFontString(nil, "OVERLAY")
+    b.hold:SetPoint("BOTTOM", b, "BOTTOM", 0, 0)
+    b.hold:SetJustifyH("CENTER")
+    b.hold:SetJustifyV("BOTTOM")
+    b.hold:SetTextColor(1, 1, 1)
+    b.hold:Hide()
+
+    -- The action button highlight, while the recommended spell is the one
+    -- you're casting or have queued.
+    b.highlight = b:CreateTexture(nil, "OVERLAY")
+    b.highlight:SetTexture(HIGHLIGHT)
+    b.highlight:SetAllPoints(b)
+    b.highlight:SetBlendMode("ADD")
+    b.highlight:Hide()
 
     -- "Press now" flash: brightens the icon briefly (additive white).
     b.flash = b.overlay:CreateTexture(nil, "OVERLAY")
@@ -174,14 +261,6 @@ function Display.CreateButton(parent, name, large)
     b.flash:SetTexture(1, 1, 1)
     b.flash:SetBlendMode("ADD")
     b.flash:Hide()
-
-    -- Proc glow: the action button border glow, around the icon (sized in
-    -- Display:SetButtonSize).
-    b.glow = b.overlay:CreateTexture(nil, "OVERLAY")
-    b.glow:SetTexture(GLOW_TEXTURE)
-    b.glow:SetBlendMode("ADD")
-    b.glow:SetPoint("CENTER", b, "CENTER")
-    b.glow:Hide()
 
     -- Proc badge: the proc's icon in the bottom-right corner when the proc
     -- is why this ability is recommended.
@@ -196,24 +275,56 @@ function Display.CreateButton(parent, name, large)
     badge:Hide()
     b.badge = badge
 
-    -- Hold label: what the main icon waits on (RUNES, COOLDOWN, ...).
-    b.hold = b.overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    b.hold:SetPoint("BOTTOM", b, "BOTTOM", 0, 2)
-    b.hold:SetTextColor(1, 1, 1)
-    b.hold:SetShadowOffset(1, -1)
-    b.hold:Hide()
-
     b:Hide()
     return b
 end
 
 function Display.SetButtonSize(b, size)
+    b.size = size
     b:SetWidth(size)
     b:SetHeight(size)
-    b.glow:SetWidth(size * GLOW_SCALE)
-    b.glow:SetHeight(size * GLOW_SCALE)
     b.badge:SetWidth(size * BADGE_SCALE)
     b.badge:SetHeight(size * BADGE_SCALE)
+    local dot = min(20, max(10, size / 3))
+    b.delayIcon:SetWidth(dot)
+    b.delayIcon:SetHeight(dot)
+    local thickness = b.borderThickness or 0
+    b.border:SetWidth(size + 2 * thickness)
+    b.border:SetHeight(size + 2 * thickness)
+end
+
+-- Applies the look settings to a button: the border, the icon zoom and
+-- the fonts. `d` is the display profile.
+function Display.StyleButton(b, d)
+    local thickness = d.border or 0
+    b.borderThickness = thickness
+    if thickness > 0 then
+        b.border:SetBackdrop({ edgeFile = WHITE, edgeSize = thickness,
+            insets = { left = -1, right = -1, top = -1, bottom = -1 } })
+        if d.borderClassColor then
+            local r, g, bl = ns.Mover.ClassColor()
+            b.border:SetBackdropBorderColor(r, g, bl, 1)
+        else
+            local c = d.borderColor
+            b.border:SetBackdropBorderColor(c[1], c[2], c[3], c[4] or 1)
+        end
+        b.border:Show()
+    else
+        b.border:SetBackdrop(nil)
+        b.border:Hide()
+    end
+    -- Zoom: the percentage of the icon's edge trimmed off, where 30%
+    -- removes the Blizzard border baked into the icons.
+    local inset = (d.zoom or 0) / 400
+    b.icon:SetTexCoord(inset, 1 - inset, inset, 1 - inset)
+    local size = d.fontSize or 12
+    b.key:SetFont(FONT, size, "OUTLINE")
+    b.delay:SetFont(FONT, size, "OUTLINE")
+    b.targets:SetFont(FONT, size, "OUTLINE")
+    b.hold:SetFont(FONT, size, "OUTLINE")
+    if b.size then Display.SetButtonSize(b, b.size) end
+    b.tint = nil -- colors may have changed
+    ns.Glow.Stop(b)
 end
 
 function Display:CreateFrames()
@@ -226,16 +337,17 @@ function Display:CreateFrames()
         frame:StopMovingOrSizing()
         Display:SavePosition()
     end)
-
-    f.label = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    f.label:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, 4)
-    f.label:SetText("RotationHelper: drag to move, /rh lock when done")
+    f.SavePosition = function() Display:SavePosition() end
 
     self.frame = f
     self.buttons = {}
     for i = 1, MAX_ICONS do
-        self.buttons[i] = Display.CreateButton(f, "RotationHelperButton" .. i, i == 1)
+        self.buttons[i] = Display.CreateButton(f, "RotationHelperButton" .. i)
     end
+    self.buttons[1].targetMode = "primary"
+
+    -- Unlocked: Hekili's box with the display name (UI/Mover.lua).
+    ns.Mover.Create(f, "Primary", ns.Mover.OpenDisplaySettings)
 
     -- Waste warning: an orange border around the main icon that pulses.
     local main = self.buttons[1]
@@ -255,11 +367,11 @@ function Display:CreateFrames()
     main.threat = threat
 
     -- The spell you're casting, beside the main icon (see UpdateCast).
-    self.castButton = Display.CreateButton(f, "RotationHelperCastButton", false)
+    self.castButton = Display.CreateButton(f, "RotationHelperCastButton")
 
     -- In-range alternative when the main ability is out of range, below
     -- the status line.
-    self.altButton = Display.CreateButton(f, "RotationHelperAlternativeButton", false)
+    self.altButton = Display.CreateButton(f, "RotationHelperAlternativeButton")
 
     -- Status line under the main icon: "CD", the AoE mode or enemy count,
     -- and waste labels. The first two are chips that Shift-click toggles.
@@ -342,6 +454,18 @@ function Display:SavePosition()
     self.db.point = { point, "UIParent", relPoint, x, y }
 end
 
+-- The outermost buttons of a queue laid out from `main` in `direction`
+-- with `count` icons of `mainSize` and `queueSize`: left, right, top,
+-- bottom (for the unlocked box).
+function Display.Perimeter(buttons, count, direction, mainSize, queueSize)
+    local main, last = buttons[1], buttons[max(1, count)]
+    local big = count > 1 and queueSize > mainSize and buttons[2] or main
+    if direction == "LEFT" then return last, main, big, big end
+    if direction == "UP" then return big, big, last, main end
+    if direction == "DOWN" then return big, big, main, last end
+    return main, last, big, big
+end
+
 function Display:ApplySettings()
     self.db = RH.db.profile.display
     previewKey = nil -- the rotation may have changed
@@ -356,8 +480,9 @@ function Display:ApplySettings()
     f:EnableMouse(not d.locked)
 
     local grow = GROW[d.direction] or GROW.RIGHT
-    local queueSize = d.iconSize * d.queueScale
+    local queueSize = d.queueSize or d.iconSize
     for i, b in ipairs(self.buttons) do
+        Display.StyleButton(b, d)
         b:ClearAllPoints()
         if i == 1 then
             b:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
@@ -366,20 +491,48 @@ function Display:ApplySettings()
             b:SetPoint(grow[1], self.buttons[i - 1], grow[2], grow[3] * d.spacing, grow[4] * d.spacing)
             Display.SetButtonSize(b, queueSize)
         end
-        b.tint = nil -- colors may have changed
     end
 
     local main, colors = self.buttons[1], d.colors
     main.warn:SetBackdropBorderColor(colors.waste[1], colors.waste[2], colors.waste[3], 1)
     main.threat:SetBackdropBorderColor(colors.threat[1], colors.threat[2], colors.threat[3], 1)
     local alt = self.altButton
+    Display.StyleButton(alt, d)
     alt:ClearAllPoints()
     alt:SetPoint("TOPLEFT", main, "BOTTOMLEFT", 0, -(STATUS_HEIGHT + 4))
     Display.SetButtonSize(alt, queueSize)
-    alt.tint = nil
+    Display.StyleButton(self.castButton, d)
+
+    if d.locked then
+        f.mover:Hide()
+    else
+        ns.Mover.Layout(f.mover, Display.Perimeter(self.buttons, d.numIcons, d.direction, d.iconSize, queueSize))
+        f.mover:Show()
+    end
 
     self:ApplyExtras()
     self:Refresh()
+end
+
+-- Copies a layout preset into the profile (see Display.PRESETS).
+function RH:ApplyPreset(name)
+    local preset = Display.PRESETS[name]
+    if not preset then
+        self:Print("Presets: " .. table.concat({ "hekili", "grambam" }, ", "))
+        return false
+    end
+    local d = self.db.profile.display
+    for key, value in pairs(preset) do
+        if type(value) == "table" then
+            d[key] = { unpack(value) }
+        else
+            d[key] = value
+        end
+    end
+    d.preset = name -- "Reset positions" goes back to this preset's spots
+    self:Print("Layout preset '" .. name .. "' applied.")
+    self:SettingChangedOutsideOptions()
+    return true
 end
 
 ---------------------------------------------------------------------------
@@ -409,9 +562,10 @@ end
 
 -- The setters below skip calls into the client when nothing changed; the
 -- display refreshes up to 20 times a second and rarely changes.
-local function Tint(b, color)
-    if b.tint == color then return end
-    b.tint = color
+local function Tint(b, color, desaturate)
+    if b.tint == color and b.desaturated == desaturate then return end
+    b.tint, b.desaturated = color, desaturate
+    b.icon:SetDesaturated(desaturate)
     b.icon:SetVertexColor(color[1], color[2], color[3])
 end
 
@@ -427,50 +581,215 @@ local function SetKeyText(b, text)
     b.key:SetText(text)
 end
 
+local function SetText(fs, text)
+    if fs.lastText == text then return end
+    fs.lastText = text
+    fs:SetText(text)
+end
+
+-- "0.8": seconds, cached per tenth so updates create no strings. From 10s
+-- on, whole seconds ("12"), so a long countdown doesn't grow the cache.
+local tenths, wholeSeconds = {}, {}
+local function TenthsText(seconds)
+    if seconds >= 10 then
+        local n = floor(seconds + 0.5)
+        local text = wholeSeconds[n]
+        if not text then
+            text = tostring(n)
+            wholeSeconds[n] = text
+        end
+        return text
+    end
+    local n = floor(seconds * 10 + 0.5)
+    local text = tenths[n]
+    if not text then
+        text = ("%.1f"):format(n / 10)
+        tenths[n] = text
+    end
+    return text
+end
+
+-- Enemy count texts, cached per (shown, detected).
+local targetTexts = {}
+local function TargetText(shown, detected)
+    local key = shown * 1000 + detected
+    local text = targetTexts[key]
+    if not text then
+        -- Red: fewer enemies around than the mode assumes; blue: more.
+        local color = detected < shown and "|cFFFF0000" or (shown < detected and "|cFF00C0FF" or "")
+        text = color .. shown .. (color ~= "" and "|r" or "")
+        targetTexts[key] = text
+    end
+    return text
+end
+
+-- Seconds until the ability's own cooldown, the GCD or your cast lets you
+-- press it: the wait the swipe already shows. A delay beyond this is the
+-- engine holding the ability (runes, a proc, a DoT to refresh).
+local function Moment(entry, now)
+    local s = ns.State.real
+    local moment = 0
+    local ability = entry.name and RH.classData and RH.classData.abilities[entry.name]
+    if not (ability and ability.offGcd) and s.realGcdEnd and s.realGcdEnd > now then
+        moment = s.realGcdEnd - now
+    end
+    local castRemains = s.realCastRemains or s.castRemains
+    if castRemains and castRemains > moment then moment = castRemains end
+    local cd = entry.name and s.cooldowns[entry.name]
+    if cd and cd.readyAt ~= math.huge and cd.readyAt - now > moment then moment = cd.readyAt - now end
+    return moment
+end
+
+-- Where the main icon's swipe starts (Hekili's "extend"): from the
+-- ability's own cooldown if it's running, else your cast, else the GCD,
+-- so the swipe shows how far along the real wait is.
+local function SwipeStart(entry, now)
+    local s = ns.State.real
+    local cd = entry.name and s.cooldowns[entry.name]
+    if cd and cd.duration and cd.readyAt ~= math.huge and cd.readyAt > now and cd.readyAt - cd.duration < now then
+        return cd.readyAt - cd.duration
+    end
+    if s.castStart and s.castDuration and s.castStart + s.castDuration > now then return s.castStart end
+    if s.realGcdEnd and s.gcdDuration and s.realGcdEnd > now then return s.realGcdEnd - s.gcdDuration end
+    return now
+end
+
+-- The real cooldown of an entry's spell or item (GCD included), as the
+-- action bars show it: start, duration, or nil.
+local function RealCooldown(entry, info)
+    local start, duration, enabled
+    if entry.itemID then
+        if not GetItemCooldown then return nil end
+        start, duration, enabled = GetItemCooldown(entry.itemID)
+    elseif info.name then
+        start, duration, enabled = GetSpellCooldown(info.name)
+    end
+    if start and start > 0 and duration and duration > 0 and enabled ~= 0 then return start, duration end
+    return nil
+end
+
+local function SetSwipe(b, start, duration)
+    if b.swipeStart ~= start or b.swipeDuration ~= duration then
+        b.swipeStart, b.swipeDuration = start, duration
+        b.cooldown:SetCooldown(start, duration)
+    end
+    b.cooldown:Show()
+end
+
+local function HideSwipe(b)
+    b.swipeStart, b.swipeDuration = nil, nil
+    b.cooldown:Hide()
+end
+
+-- The enemy count for a main icon: in single-target mode always 1 (as
+-- Hekili shows), in AoE mode at least 3, otherwise the count when there's
+-- more than one enemy. Red when fewer are around than shown, blue when more.
+function Display:UpdateTargets(b)
+    if not self.db.targetCount then
+        SetText(b.targets, "")
+        return
+    end
+    local toggles = RH.db.profile.toggles
+    local detected = RH.detectedEnemies or ns.State.real.activeEnemies or 1
+    local tMin, tMax = 0, 0
+    if b.targetMode == "aoe" then
+        tMin = 3
+    elseif self.db.dualDisplay or toggles.aoeMode == "single" then
+        tMax = 1
+    elseif toggles.aoeMode == "aoe" then
+        tMin = 3
+    end
+    local shown = detected
+    if tMin > 0 then shown = max(tMin, shown) end
+    if tMax > 0 then shown = min(tMax, shown) end
+    if tMax == 1 or shown > 1 then
+        SetText(b.targets, TargetText(shown, detected))
+    else
+        SetText(b.targets, "")
+    end
+end
+
 function Display:UpdateButton(b, entry, isMain, now)
+    local d = self.db
     local info = entry.itemID and ItemInfo(entry) or SpellInfo(entry.spellId)
     SetIcon(b, info.icon)
-    SetKeyText(b, ns.Keybinds:Get(info.name) or "")
+    SetKeyText(b, (isMain or d.keybindQueued) and ns.Keybinds:Get(info.name) or "")
 
-    local colors = self.db.colors
-    if info.name and UnitExists("target") and IsSpellInRange(info.name, "target") == 0 then
-        Tint(b, colors.outOfRange)
-    elseif entry.lacksResources then
-        Tint(b, colors.noResources)
+    -- Out of range: desaturated red. Unusable (resources): dark grey.
+    local colors = d.colors
+    local outOfRange = info.name and UnitExists("target") and IsSpellInRange(info.name, "target") == 0
+    if outOfRange then
+        Tint(b, colors.outOfRange, true)
     else
-        Tint(b, TINT_NORMAL)
+        local unusable = entry.lacksResources
+        if not unusable and info.name and not entry.itemID then
+            local _, noMana = IsUsableSpell(info.name)
+            unusable = noMana
+        end
+        Tint(b, unusable and colors.noResources or TINT_NORMAL, false)
     end
 
-    -- Hold label on the main icon when it's more than a GCD away.
-    local hold = isMain and self.db.holdIndicator and entry.wait
-        and entry.wait > (ns.State.real.gcdDuration or 1.5) and HOLD_LABELS[entry.limitedBy]
-    if hold then
-        if b.holdText ~= hold then
-            b.holdText = hold
-            b.hold:SetText(hold)
+    local wait = entry.wait
+    if isMain then
+        -- The swipe runs to the predicted press time; it's only restarted
+        -- when that time moves, so it doesn't flicker.
+        if wait and wait > 0.05 then
+            local readyAt = now + wait
+            if not b.readyAt or abs(readyAt - b.readyAt) > 0.1 then
+                local start = SwipeStart(entry, now)
+                b.swipeStart = nil
+                SetSwipe(b, start, readyAt - start)
+                b.readyAt = readyAt
+            end
+            b.readySpell = entry.spellId
+        elseif b.readyAt then
+            -- The ability we were counting down to is ready now (a refresh got
+            -- here before Animate did).
+            if b.readySpell == entry.spellId then self:StartFlash(b, now) end
+            HideSwipe(b)
+            b.readyAt = nil
         end
-        b.hold:Show()
-    else
-        b.hold:Hide()
-    end
 
-    -- Restarting the swipe every refresh would make it flicker, so only
-    -- restart it when the predicted ready time actually moves.
-    local wait = isMain and entry.wait or 0
-    if wait and wait > 0.05 then
-        local readyAt = now + wait
-        if not b.readyAt or abs(readyAt - b.readyAt) > 0.1 then
-            b.cooldown:Show()
-            b.cooldown:SetCooldown(now, wait)
-            b.readyAt = readyAt
+        -- Delay: the wait beyond the cooldown the swipe already shows.
+        local delay = d.delayType ~= "NONE" and wait and wait > Moment(entry, now) + 0.05 and wait or nil
+        if delay and d.delayType == "ICON" then
+            SetText(b.delay, "")
+            if delay < 0.5 then
+                b.delayIcon:SetVertexColor(0, 1, 0, 1)
+            elseif delay < 1.5 then
+                b.delayIcon:SetVertexColor(1, 1, 0, 1)
+            else
+                b.delayIcon:SetVertexColor(1, 0, 0, 1)
+            end
+            b.delayIcon:Show()
+        else
+            SetText(b.delay, delay and TenthsText(delay) or "")
+            b.delayIcon:Hide()
         end
-        b.readySpell = entry.spellId
-    elseif b.readyAt then
-        -- The ability we were counting down to is ready now (a refresh got
-        -- here before Animate did).
-        if isMain and b.readySpell == entry.spellId then self:StartFlash(b, now) end
-        b.cooldown:Hide()
-        b.readyAt = nil
+
+        -- Caption: what the icon waits on, when it's more than a GCD away.
+        local hold = d.holdIndicator and wait and wait > (ns.State.real.gcdDuration or 1.5)
+            and HOLD_LABELS[entry.limitedBy]
+        if hold then
+            SetText(b.hold, hold)
+            b.hold:Show()
+        else
+            b.hold:Hide()
+        end
+
+        -- The highlight while this is the spell you're casting or have queued.
+        local current = d.highlightCurrent and info.name and not entry.itemID and IsCurrentSpell(info.name)
+        if current then b.highlight:Show() else b.highlight:Hide() end
+
+        if b.targetMode then self:UpdateTargets(b) end
+    else
+        -- Queued: the spell's real cooldown, GCD included, like the action bars.
+        local start, duration = RealCooldown(entry, info)
+        if start then
+            SetSwipe(b, start, duration)
+        else
+            HideSwipe(b)
+        end
     end
 
     b:Show()
@@ -503,15 +822,14 @@ function Display:Refresh()
         end
     end
 
-    local showLabel = not self.db.locked
-    if showLabel then self.frame.label:Show() else self.frame.label:Hide() end
     if showError then self.frame.errorMark:Show() else self.frame.errorMark:Hide() end
     self:UpdateChecklist(checklist)
     local main = self.buttons[1]
+    local borders = self.db.warningBorders and entries
     local waste = RH.waste
-    if waste and waste.any and entries then main.warn:Show() else main.warn:Hide() end
+    if borders and waste and waste.any then main.warn:Show() else main.warn:Hide() end
     local threat = RH.threat
-    if threat and threat.warn and entries then main.threat:Show() else main.threat:Hide() end
+    if borders and threat and threat.warn then main.threat:Show() else main.threat:Hide() end
 
     local alternative = self.db.alternative and entries and RH.alternative
     if alternative then
@@ -529,18 +847,6 @@ end
 ---------------------------------------------------------------------------
 -- The spell you're casting
 ---------------------------------------------------------------------------
--- "0.8": the cast's time left, cached per tenth of a second.
-local tenths = {}
-local function TenthsText(seconds)
-    local n = math.floor(seconds * 10 + 0.5)
-    local text = tenths[n]
-    if not text then
-        text = ("%.1f"):format(n / 10)
-        tenths[n] = text
-    end
-    return text
-end
-
 -- Whether to show your cast: casting or channelling for real, with
 -- recommendations on screen (not the sample icons).
 function Display:ShowsCast(entries)
@@ -565,9 +871,8 @@ function Display:UpdateCast(entries, now)
         b.slideStart = now
         SetIcon(b, s.castIcon or SpellInfo(0).icon)
         SetKeyText(b, "")
-        Tint(b, TINT_NORMAL)
-        b.cooldown:Show()
-        b.cooldown:SetCooldown(s.castStart, s.castDuration)
+        Tint(b, TINT_NORMAL, false)
+        SetSwipe(b, s.castStart, s.castDuration)
     end
     b:Show()
     self:AnimateCast(now)
@@ -583,8 +888,8 @@ function Display:AnimateCast(now)
         return
     end
     local duration = b.castEnd - b.castStart
-    local progress = math.max(0, math.min(1, (now - b.castStart) / duration))
-    local slide = math.min(1, (now - b.slideStart) / CAST_SLIDE)
+    local progress = max(0, min(1, (now - b.castStart) / duration))
+    local slide = min(1, (now - b.slideStart) / CAST_SLIDE)
     slide = 1 - (1 - slide) * (1 - slide) -- ease out
     local main, d = self.buttons[1], self.db
     local size = d.iconSize * (1 - (1 - CAST_MIN_SCALE) * progress)
@@ -598,11 +903,7 @@ function Display:AnimateCast(now)
     else
         b:SetPoint("RIGHT", main, "LEFT", -d.spacing * slide + overlap, 0)
     end
-    local text = TenthsText(math.max(0, b.castEnd - now))
-    if b.holdText ~= text then
-        b.holdText = text
-        b.hold:SetText(text)
-    end
+    SetText(b.hold, TenthsText(max(0, b.castEnd - now)))
     b.hold:Show()
 end
 
@@ -625,7 +926,7 @@ local function SetChipText(chip, text)
     if chip.lastText ~= text then
         chip.lastText = text
         chip.text:SetText(text)
-        chip:SetWidth(math.max(1, chip.text:GetStringWidth()))
+        chip:SetWidth(max(1, chip.text:GetStringWidth()))
     end
     if text == "" then chip:Hide() else chip:Show() end
 end
@@ -725,7 +1026,7 @@ function Display:UpdateDotText(enemies)
     local s = ns.State.real
     local hint = ns.Dots.hint
     if enemies > 1 and hint and RH.inCombat then
-        local count = math.min(ns.Dots.HintCount(s), enemies)
+        local count = min(ns.Dots.HintCount(s), enemies)
         local texts = dotTexts[hint.label]
         if not texts then
             texts = {}
@@ -781,8 +1082,11 @@ function Display:GetStatusText()
     return table.concat(parts, "  ")
 end
 
--- Proc glow on buttons whose ability spends a proc, and a sound once per
--- new proc (a proc is new when its expiry time changes).
+---------------------------------------------------------------------------
+-- Procs: the glow (Hekili's styles, UI/Glow.lua) on icons whose ability
+-- spends a proc, the badge, and a sound once per new proc (a proc is new
+-- when its expiry time changes).
+---------------------------------------------------------------------------
 -- The icon of a proc aura, e.g. Killing Machine's.
 local function ProcIcon(key)
     local def = RH.classData.auras[key]
@@ -790,12 +1094,33 @@ local function ProcIcon(key)
     return id and SpellInfo(id).icon
 end
 
+local classGlowColor = {}
+function Display:GlowColor()
+    local d = self.db
+    if d.glowClassColor then
+        classGlowColor[1], classGlowColor[2], classGlowColor[3], classGlowColor[4] = ns.Mover.ClassColor()
+        classGlowColor[4] = 1
+        return classGlowColor
+    end
+    return d.glowColor or ns.Glow.DEFAULT_COLOR
+end
+
+-- Shows or hides the proc glow on one button.
+function Display:SetGlow(b, on)
+    if on then
+        ns.Glow.Start(b, self.db.glowMode or "autocast", self:GlowColor(), self.db.glowScale or 1)
+    elseif b.glowing then
+        ns.Glow.Stop(b)
+    end
+end
+
 function Display:UpdateProcs(entries, count)
-    local glowOn, badgeOn = self.db.procGlow, self.db.procBadge
+    local d = self.db
+    local glowOn, badgeOn = d.procGlow, d.procBadge
     for i, b in ipairs(self.buttons) do
         local entry = entries and i <= count and entries[i]
         local shown = entry and b:IsShown()
-        if glowOn and shown and entry.usesProc then b.glow:Show() else b.glow:Hide() end
+        self:SetGlow(b, glowOn and shown and entry.usesProc and (i == 1 or d.glowQueued))
         local reason = badgeOn and shown and entry.procReason
         if reason then
             local icon = ProcIcon(reason)
@@ -809,7 +1134,7 @@ function Display:UpdateProcs(entries, count)
         end
     end
     local main = entries and entries[1]
-    local sound = self.db.procSound
+    local sound = d.procSound
     if main and main.usesProc and sound and sound ~= "none" then
         local key = main.usesProc
         self.procHeard = self.procHeard or {}
@@ -823,6 +1148,12 @@ end
 ---------------------------------------------------------------------------
 -- Lifecycle
 ---------------------------------------------------------------------------
+-- The other displays draw with this module's settings and may be enabled
+-- before it (AceAddon enables modules in no particular order).
+function Display:OnInitialize()
+    self.db = RH.db.profile.display
+end
+
 function Display:OnEnable()
     self:CreateFrames()
     self:SetupMouse()

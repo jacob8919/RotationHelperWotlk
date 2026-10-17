@@ -11,6 +11,7 @@ local function Fight()
     s.hasTarget = true
     s:FireEvent("PLAYER_REGEN_DISABLED")
     s:Slash("ACECONSOLE_RH", "lock")
+    RH.db.profile.display.showStatus = true -- the CD and POT chips are checked
     RH.db.profile.toggles.cooldowns = true
     s.bags[40211] = 2
     s:FireEvent("BAG_UPDATE")

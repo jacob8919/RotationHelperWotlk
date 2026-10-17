@@ -62,6 +62,7 @@ local SUITES = {
     "test_apl_options",
     "test_castslot",
     "test_consumables",
+    "test_hekili_look",
 }
 
 for _, suite in ipairs(SUITES) do

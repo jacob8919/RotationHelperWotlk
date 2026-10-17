@@ -12,8 +12,6 @@ ns.Options = Options
 
 local format, concat = string.format, table.concat
 
-local DEFAULT_POINT = { "CENTER", "UIParent", "CENTER", 0, -150 }
-
 local AOE_MODES = { auto = "Auto (count enemies)", single = "Single target", aoe = "AoE (3+ targets)" }
 local DIRECTIONS = { RIGHT = "Right", LEFT = "Left", UP = "Up", DOWN = "Down" }
 local LATENCY_MODES = {
@@ -375,68 +373,161 @@ function Options:BuildOptionsTable()
             return ("Currently %d ms (%s)."):format(seconds * 1000 + 0.5, source)
         end }
 
+    local function Hidden(key)
+        return function() return not RH.db.profile.display[key] end
+    end
+    local function DisplayColor(key, name, order, desc)
+        return { type = "color", name = name, order = order, desc = desc, hasAlpha = false,
+            get = function() return unpack(RH.db.profile.display[key]) end,
+            set = function(_, r, g, b)
+                RH.db.profile.display[key] = { r, g, b, 1 }
+                Changed()
+            end }
+    end
     local display = WithAccessors({
         type = "group", name = "Display", order = 2,
         args = {
             locked = { type = "toggle", name = "Lock position", order = 1,
-                desc = "Unlocked, the display shows sample icons and can be dragged." },
+                desc = "Unlocked, each display shows sample icons under a box with its name: drag the box "
+                    .. "to move it, right-click it for these settings." },
             testMode = { type = "toggle", name = "Show sample icons", order = 2,
                 get = function() return ns.Display.testMode end,
                 set = function(_, value) ns.Display:SetTestMode(value) end },
-            resetPosition = { type = "execute", name = "Reset position", order = 3,
+            resetPosition = { type = "execute", name = "Reset positions", order = 3,
+                desc = "Put every display back where the current layout preset has it.",
                 func = function()
-                    RH.db.profile.display.point = { unpack(DEFAULT_POINT) }
-                    RH.db.profile.display.aoePoint = { "CENTER", "UIParent", "CENTER", 0, -240 }
+                    local d = RH.db.profile.display
+                    local preset = ns.Display.PRESETS[d.preset or "hekili"]
+                    for _, key in ipairs({ "point", "aoePoint", "interruptPoint", "cooldownPoint" }) do
+                        d[key] = { unpack(preset[key]) }
+                    end
+                    d.notifyPoint = { "CENTER", "UIParent", "CENTER", 0, 0 }
                     Changed()
                 end },
-            dualDisplay = { type = "toggle", name = "Dual display (single target + AoE)", order = 4, width = "full",
-                desc = "Like Hekili's dual display: the main display always shows the single-target "
-                    .. "priority and a second display, which you can move on its own, always shows the "
-                    .. "AoE priority (3+ enemies). Use whichever fits the pull. /rh dual toggles it." },
+            presets = { type = "header", name = "Layout presets", order = 5 },
+            presetInfo = { type = "description", order = 5.1, fontSize = "medium",
+                name = "A preset sets the sizes, spacing, icon counts and positions below; everything stays "
+                    .. "editable afterwards. /rh preset <name> does the same." },
+            presetHekili = { type = "execute", name = "Hekili (stock)", order = 5.2,
+                desc = "Hekili's defaults: 50px icons, 5px apart, 3 per display.",
+                func = function() RH:ApplyPreset("hekili") end },
+            presetGrambam = { type = "execute", name = "Grambam (compact)", order = 5.3,
+                desc = "A 32px main icon with 30px queue icons almost touching, the AoE display to the right "
+                    .. "and only shown with 3+ enemies (dual display, reactive).",
+                func = function() RH:ApplyPreset("grambam") end },
             layout = { type = "header", name = "Layout", order = 10 },
             numIcons = { type = "range", name = "Icons", order = 11, min = 1, max = 5, step = 1,
                 desc = "The main icon plus predicted next actions." },
             scale = { type = "range", name = "Scale", order = 12, min = 0.5, max = 3, step = 0.05, isPercent = true },
-            iconSize = { type = "range", name = "Icon size", order = 13, min = 24, max = 96, step = 1 },
-            queueScale = { type = "range", name = "Queue icon size", order = 14, min = 0.4, max = 1, step = 0.05,
-                isPercent = true, desc = "Queued icons relative to the main icon." },
-            spacing = { type = "range", name = "Spacing", order = 15, min = 0, max = 20, step = 1 },
-            aoeLayout = { type = "header", name = "AoE display (dual display)", order = 17,
-                hidden = function() return not RH.db.profile.display.dualDisplay end },
-            aoeNumIcons = { type = "range", name = "Icons", order = 17.1, min = 1, max = 5, step = 1,
-                desc = "Icons on the AoE display.",
-                hidden = function() return not RH.db.profile.display.dualDisplay end },
-            aoeScale = { type = "range", name = "Scale", order = 17.2, min = 0.5, max = 3, step = 0.05, isPercent = true,
-                desc = "The AoE display's scale, separate from the main display's.",
-                hidden = function() return not RH.db.profile.display.dualDisplay end },
-            aoeIconSize = { type = "range", name = "Icon size", order = 17.3, min = 24, max = 96, step = 1,
-                hidden = function() return not RH.db.profile.display.dualDisplay end },
-            aoeQueueScale = { type = "range", name = "Queue icon size", order = 17.4, min = 0.4, max = 1, step = 0.05,
-                isPercent = true, desc = "Queued AoE icons relative to its main icon.",
-                hidden = function() return not RH.db.profile.display.dualDisplay end },
+            iconSize = { type = "range", name = "Icon size", order = 13, min = 20, max = 96, step = 1,
+                desc = "The main icon, in pixels." },
+            queueSize = { type = "range", name = "Queue icon size", order = 14, min = 16, max = 96, step = 1,
+                desc = "The queued icons, in pixels." },
+            spacing = { type = "range", name = "Spacing", order = 15, min = 0, max = 20, step = 1,
+                desc = "Between the icons, in pixels. Borders overlap it, as in Hekili: 1px with 1px borders "
+                    .. "leaves a single dark line." },
             direction = { type = "select", name = "Queue direction", order = 16, values = DIRECTIONS,
                 disabled = function() return RH.db.profile.display.timeline end },
-            visibility = { type = "header", name = "Visibility", order = 20 },
-            hideOutOfCombat = { type = "toggle", name = "Hide out of combat", order = 21 },
-            showStatus = { type = "toggle", name = "Show toggle status", order = 22,
-                desc = "CD / AoE mode / enemy count under the main icon." },
-            pressFlash = { type = "toggle", name = "Flash when it's time to press", order = 23,
-                desc = "Briefly brighten the main icon the moment its ability can be pressed." },
-            castSlot = { type = "toggle", name = "Show the spell you're casting", order = 23.5,
-                desc = "While you cast or channel, that spell slides out beside the main icon and shrinks "
-                    .. "until it lands. The main icon stays what to press next." },
-            interrupt = { type = "toggle", name = "Interrupt icon", order = 24,
-                desc = "A separate icon above the main one while your target casts something interruptible." },
-            shiftInteract = { type = "toggle", name = "Shift: tooltips and clickable toggles", order = 25,
+            zoom = { type = "range", name = "Icon zoom", order = 17, min = 0, max = 50, step = 1,
+                desc = "Trims the edge of the icon textures. About 30% removes the border baked into "
+                    .. "Blizzard's icons." },
+            borderHeader = { type = "header", name = "Border", order = 20 },
+            border = { type = "range", name = "Thickness", order = 21, min = 0, max = 4, step = 1,
+                desc = "A border around each icon, in pixels (0 for none)." },
+            borderClassColor = { type = "toggle", name = "Class color", order = 22,
+                disabled = function() return RH.db.profile.display.border == 0 end },
+            borderColor = DisplayColor("borderColor", "Color", 23),
+            textHeader = { type = "header", name = "Text on the icons", order = 30 },
+            fontSize = { type = "range", name = "Font size", order = 31, min = 8, max = 24, step = 1,
+                desc = "The keybind, delay and enemy count (Arial Narrow, outlined)." },
+            keybindQueued = { type = "toggle", name = "Keybinds on queued icons", order = 32 },
+            targetCount = { type = "toggle", name = "Enemy count", order = 33,
+                desc = "In the bottom-right corner of the main icon: the enemies the rotation is counting. "
+                    .. "Red when fewer are around than it assumes, blue when more." },
+            delayType = { type = "select", name = "Delay", order = 34,
+                values = function() return ns.Display.DELAY_TYPES end,
+                desc = "In the top-left corner of the main icon, when the rotation waits longer than the "
+                    .. "cooldown swipe already shows (runes, a proc, a DoT to refresh)." },
+            highlightCurrent = { type = "toggle", name = "Highlight the spell being cast", order = 35,
+                desc = "The action button highlight on the main icon while its spell is the one you're "
+                    .. "casting or have queued." },
+            glowHeader = { type = "header", name = "Proc glow", order = 40 },
+            procGlow = { type = "toggle", name = "Glow on proc abilities", order = 41,
+                desc = "Glow on the main icon when its ability spends a proc (Killing Machine, Hot Streak, ...)." },
+            glowMode = { type = "select", name = "Style", order = 42,
+                values = function() return ns.Glow.MODES end,
+                disabled = Hidden("procGlow"),
+                desc = "Autocast shine: Hekili's default, sparkles orbiting the icon. Pixel glow: lines running "
+                    .. "around its edge. Action button glow: the game's own proc glow with the ants." },
+            glowClassColor = { type = "toggle", name = "Class color", order = 43, disabled = Hidden("procGlow") },
+            glowColor = DisplayColor("glowColor", "Color", 44),
+            glowQueued = { type = "toggle", name = "On queued icons too", order = 45, disabled = Hidden("procGlow") },
+            glowScale = { type = "range", name = "Size", order = 46, min = 0.5, max = 2, step = 0.1,
+                isPercent = true, disabled = Hidden("procGlow") },
+            aoeLayout = { type = "header", name = "AoE display", order = 50 },
+            dualDisplay = { type = "toggle", name = "Dual display (single target + AoE)", order = 50.1, width = "full",
+                desc = "Like Hekili's dual display: the main display always shows the single-target "
+                    .. "priority and a second display, which you can move on its own, always shows the "
+                    .. "AoE priority (3+ enemies). Use whichever fits the pull. /rh dual toggles it." },
+            reactiveAoE = { type = "toggle", name = "Reactive: only with 3+ enemies", order = 50.2, width = "full",
+                desc = "Hekili's reactive mode: the AoE display only appears once three or more enemies "
+                    .. "are around.",
+                disabled = Hidden("dualDisplay") },
+            aoeNumIcons = { type = "range", name = "Icons", order = 51, min = 1, max = 5, step = 1,
+                desc = "Icons on the AoE display.", hidden = Hidden("dualDisplay") },
+            aoeScale = { type = "range", name = "Scale", order = 52, min = 0.5, max = 3, step = 0.05, isPercent = true,
+                desc = "The AoE display's scale, separate from the main display's.", hidden = Hidden("dualDisplay") },
+            aoeIconSize = { type = "range", name = "Icon size", order = 53, min = 20, max = 96, step = 1,
+                hidden = Hidden("dualDisplay") },
+            aoeQueueSize = { type = "range", name = "Queue icon size", order = 54, min = 16, max = 96, step = 1,
+                hidden = Hidden("dualDisplay") },
+            otherDisplays = { type = "header", name = "Interrupt and cooldown displays", order = 55 },
+            interrupt = { type = "toggle", name = "Interrupt display", order = 56,
+                desc = "Its own icon while your target casts something you can interrupt. Move it while unlocked." },
+            interruptSize = { type = "range", name = "Interrupt icon size", order = 57, min = 20, max = 96, step = 1,
+                disabled = Hidden("interrupt") },
+            separateCooldowns = { type = "toggle", name = "Cooldowns display", order = 58,
+                desc = "Major cooldowns leave the main queue and the next one to use shows in its own icon, "
+                    .. "like Hekili's Cooldowns display. Move it while unlocked." },
+            cooldownSize = { type = "range", name = "Cooldown icon size", order = 59, min = 20, max = 96, step = 1,
+                disabled = Hidden("separateCooldowns") },
+            visibility = { type = "header", name = "Visibility", order = 60 },
+            hideOutOfCombat = { type = "toggle", name = "Hide out of combat", order = 61 },
+            notifications = { type = "toggle", name = "Announce toggles on screen", order = 62,
+                desc = "Cooldowns, potions, the mode and pausing announced in the middle of the screen, "
+                    .. "fading out (Hekili's notifications). Movable while unlocked." },
+            shiftInteract = { type = "toggle", name = "Shift: tooltips and clickable toggles", order = 63,
                 desc = "While Shift is held, hover an icon to see why it's recommended, "
                     .. "and click CD or the AoE mode to toggle them." },
-            procGlow = { type = "toggle", name = "Glow on proc abilities", order = 26,
-                desc = "Glow on icons whose ability spends Killing Machine or Rime." },
-            procBadge = { type = "toggle", name = "Proc icon in the corner", order = 26.5,
+            extrasHeader = { type = "header", name = "Extras (not in Hekili)", order = 70 },
+            showStatus = { type = "toggle", name = "Show toggle status", order = 71,
+                desc = "CD / POT / AoE mode / enemy count under the main icon." },
+            pressFlash = { type = "toggle", name = "Flash when it's time to press", order = 72,
+                desc = "Briefly brighten the main icon the moment its ability can be pressed." },
+            castSlot = { type = "toggle", name = "Show the spell you're casting", order = 73,
+                desc = "While you cast or channel, that spell slides out beside the main icon and shrinks "
+                    .. "until it lands. The main icon stays what to press next." },
+            procBadge = { type = "toggle", name = "Proc icon in the corner", order = 74,
                 desc = "Show the proc's icon in the bottom-right corner when the proc is why "
                     .. "the ability is recommended (e.g. Frost Strike because of Killing Machine)." },
-            procSound = { type = "select", name = "Sound on a new proc", order = 27,
+            procSound = { type = "select", name = "Sound on a new proc", order = 75,
                 values = function() return ns.Display.PROC_SOUNDS end },
+            holdIndicator = { type = "toggle", name = "Say what the icon waits on", order = 76,
+                desc = "When the main ability is more than a GCD away, caption it RUNES, COOLDOWN, CAST or WAIT." },
+            alternative = { type = "toggle", name = "In-range alternative", order = 77,
+                desc = "When the main ability is out of range, show the best in-range one below it." },
+            warningBorders = { type = "toggle", name = "Waste and threat borders", order = 78,
+                desc = "A pulsing orange border on the main icon while resources go to waste, a red one "
+                    .. "when you're close to pulling aggro (see the warnings below)." },
+            runeBar = { type = "toggle", name = "Rune bar", order = 79,
+                hidden = function() return not (RH.classData and RH.classData.usesRunes) end,
+                desc = "Your runes above the icons. The strip under each rune shows its type once the queued "
+                    .. "abilities are used, dimmed if they spend it." },
+            cooldownStrip = { type = "toggle", name = "Cooldown strip", order = 80,
+                desc = "Major cooldowns and trinkets above the icons, with the time left." },
+            timeline = { type = "toggle", name = "Timeline", order = 81,
+                desc = "Place the queued icons by when they can be used, with a second under each: a gap means "
+                    .. "waiting (on runes, usually). Always grows to the right." },
         },
     }, ProfileOption("display"))
 
@@ -467,42 +558,27 @@ function Options:BuildOptionsTable()
         return "a label"
     end
     local wasteArgs = {
-        wasteHeader = { type = "header", name = "Waste warnings", order = 30 },
-        wasteInfo = { type = "description", order = 31, fontSize = "medium",
+        wasteHeader = { type = "header", name = "Waste warnings", order = 90 },
+        wasteInfo = { type = "description", order = 91, fontSize = "medium",
             name = function()
-                return ("In combat, the main icon gets a pulsing orange border (and %s on the status line) "
-                    .. "while resources go to waste."):format(WasteLabels())
+                return ("In combat, with the waste and threat borders on, the main icon gets a pulsing orange "
+                    .. "border (and %s on the status line) while resources go to waste. The fight review "
+                    .. "counts the waste either way."):format(WasteLabels())
             end },
-        enabled = WasteOption({ type = "toggle", name = "Enabled", order = 32, disabled = false }),
-        runes = WasteOption({ type = "toggle", name = "Capped rune pairs", order = 33,
+        enabled = WasteOption({ type = "toggle", name = "Enabled", order = 92, disabled = false }),
+        runes = WasteOption({ type = "toggle", name = "Capped rune pairs", order = 93,
             hidden = function() return not (RH.classData and RH.classData.usesRunes) end,
             desc = "Both runes of a pair ready: that pair isn't regenerating." }),
-        power = WasteOption({ type = "toggle", order = 34, hidden = function() return not PowerName() end,
+        power = WasteOption({ type = "toggle", order = 94, hidden = function() return not PowerName() end,
             name = function() return (PowerName() or "Power") .. " near the cap" end }),
-        powerDeficit = WasteOption({ type = "range", order = 35, min = 0, max = 40, step = 5,
+        powerDeficit = WasteOption({ type = "range", order = 95, min = 0, max = 40, step = 5,
             hidden = function() return not PowerName() end,
             name = function() return (PowerName() or "Power") .. ": warn within" end,
             desc = "Warn when it's this close to the maximum." }),
-        grace = WasteOption({ type = "range", name = "Warn after (seconds)", order = 36,
+        grace = WasteOption({ type = "range", name = "Warn after (seconds)", order = 96,
             min = 0, max = 5, step = 0.5, desc = "How long a cap may last before warning (about one GCD by default)." }),
     }
     for key, option in pairs(wasteArgs) do display.args[key] = option end
-
-    display.args.holdIndicator = { type = "toggle", name = "Say what the icon waits on", order = 28,
-        desc = "When the main ability is more than a GCD away, label it RUNES, COOLDOWN, CAST or WAIT." }
-    display.args.alternative = { type = "toggle", name = "In-range alternative", order = 29,
-        desc = "When the main ability is out of range, show the best in-range one below it." }
-
-    display.args.extrasHeader = { type = "header", name = "Extras", order = 35 }
-    display.args.runeBar = { type = "toggle", name = "Rune bar", order = 36,
-        hidden = function() return not (RH.classData and RH.classData.usesRunes) end,
-        desc = "Your runes above the icons. The strip under each rune shows its type once the queued "
-            .. "abilities are used, dimmed if they spend it." }
-    display.args.cooldownStrip = { type = "toggle", name = "Cooldown strip", order = 37,
-        desc = "Major cooldowns and trinkets above the icons, with the time left." }
-    display.args.timeline = { type = "toggle", name = "Timeline", order = 38,
-        desc = "Place the queued icons by when they can be used, with a second under each: a gap means "
-            .. "waiting (on runes, usually). Always grows to the right." }
 
     -- Colors, with presets.
     local function ColorOption(key, name, order)
@@ -522,13 +598,13 @@ function Options:BuildOptionsTable()
             Changed()
         end
     end
-    display.args.colorsHeader = { type = "header", name = "Colors", order = 40 }
-    display.args.colorOutOfRange = ColorOption("outOfRange", "Out of range", 41)
-    display.args.colorNoResources = ColorOption("noResources", "Not enough resources", 42)
-    display.args.colorWaste = ColorOption("waste", "Waste warning", 43)
-    display.args.colorThreat = ColorOption("threat", "Threat warning", 44)
-    display.args.colorsDefault = { type = "execute", name = "Default colors", order = 45, func = Preset("default") }
-    display.args.colorsColorblind = { type = "execute", name = "Color-blind friendly", order = 46,
+    display.args.colorsHeader = { type = "header", name = "Colors", order = 100 }
+    display.args.colorOutOfRange = ColorOption("outOfRange", "Out of range", 101)
+    display.args.colorNoResources = ColorOption("noResources", "Unusable (not enough resources)", 102)
+    display.args.colorWaste = ColorOption("waste", "Waste warning", 103)
+    display.args.colorThreat = ColorOption("threat", "Threat warning", 104)
+    display.args.colorsDefault = { type = "execute", name = "Hekili colors", order = 105, func = Preset("default") }
+    display.args.colorsColorblind = { type = "execute", name = "Color-blind friendly", order = 106,
         desc = "The Okabe-Ito palette: easy to tell apart with the common kinds of color blindness.",
         func = Preset("colorblind") }
 

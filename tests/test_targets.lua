@@ -191,6 +191,8 @@ test("status text shows toggles and enemy count", function()
     s.hasTarget = true
     local D = s.ns.Display
     local status = D.frame.status
+    RH.db.profile.display.showStatus = true
+    RH:OnConfigChanged()
     s:Tick(0.2)
     eq(D:GetStatusText(), "CD", "cooldowns on, single enemy")
     eq(D.frame.cdChip.text:GetText(), "|cff40ff40CD|r", "green")

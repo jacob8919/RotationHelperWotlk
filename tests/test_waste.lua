@@ -8,6 +8,7 @@ local function Fight()
     s.hasTarget = true
     s:FireEvent("PLAYER_REGEN_DISABLED")
     s:Slash("ACECONSOLE_RH", "lock")
+    RH.db.profile.display.showStatus, RH.db.profile.display.warningBorders = true, true
     for i = 1, 6 do s.runes[i].readyAt = s.time + 100 end
     return s, RH
 end
@@ -111,6 +112,7 @@ local function ClassFight(class, powerType, max, spells, talentTabs)
     s.hasTarget = true
     s:FireEvent("PLAYER_REGEN_DISABLED")
     s:Slash("ACECONSOLE_RH", "lock")
+    RH.db.profile.display.showStatus, RH.db.profile.display.warningBorders = true, true
     return s, RH
 end
 

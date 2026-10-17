@@ -200,11 +200,6 @@ function Display:ApplyExtras()
     strip:SetPoint("BOTTOMLEFT", bar.enabled and bar or anchor, "TOPLEFT", 0, EXTRA_GAP)
     strip.enabled = d.cooldownStrip and RH.classData ~= nil
 
-    -- The "drag to move" label sits on top of everything.
-    local top = (strip.enabled and strip) or (bar.enabled and bar) or anchor
-    f.label:ClearAllPoints()
-    f.label:SetPoint("BOTTOMLEFT", top, "TOPLEFT", 0, 4)
-
     -- Timeline: queued icons are placed on every refresh.
     for i = 2, #self.buttons do
         self.buttons[i].timelineX = nil
@@ -339,7 +334,7 @@ function Display:LayoutTimeline(entries, count, now)
         for _, tick in ipairs(f.ticks) do tick:Hide() end
         return
     end
-    local step = d.iconSize * d.queueScale + d.spacing
+    local step = (d.queueSize or d.iconSize) + d.spacing
     local gcd = ns.State.real.gcdDuration or 1.5
     local perSecond = step / gcd
     local maxX = (d.numIcons + 2) * step

@@ -33,6 +33,7 @@ local function Fight(opts)
     s:FireEvent("PLAYER_TALENT_UPDATE")
     s:FireEvent("PLAYER_REGEN_DISABLED")
     RH.db.profile.toggles.cooldowns = opts.cooldowns or false
+    RH.db.profile.display.showStatus = true -- the "2/3 CORR" status text is checked
     s:AddAura("player", { name = "Fel Armor", spellId = 47893, duration = 1800, expires = s.time + 1800 })
     if opts.dots then
         Dot(s, "Haunt", 59164, 10)
@@ -117,8 +118,10 @@ test("several enemies: Corruption counted on each ('2/3 CORR'), active_dot for a
     local Mock = require("wowmock")
     local s, RH = Fight({ dots = true })
     local function Log(subevent, guid, spellId, name)
+        -- After the school: the damage amount for a hit, the aura type for an aura event.
+        local extra = subevent == "SPELL_DAMAGE" and 100 or "DEBUFF"
         s:FireEvent("COMBAT_LOG_EVENT_UNFILTERED", s.time, subevent, Mock.PLAYER_GUID, "Me", Mock.FLAGS_ME,
-            guid, "Mob", Mock.FLAGS_HOSTILE_NPC, spellId, name, 32, "DEBUFF")
+            guid, "Mob", Mock.FLAGS_HOSTILE_NPC, spellId, name, 32, extra)
     end
     for i = 1, 2 do Log("SPELL_DAMAGE", "0xF1300000000000D" .. i, 686, "Shadow Bolt") end
     Log("SPELL_AURA_APPLIED", "0xF1300000000000D1", 47813, "Corruption")

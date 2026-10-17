@@ -326,7 +326,17 @@ function Mock.NewSession(opts)
         end,
     }
 
-    env.geterrorhandler = function() return function(err) error(err, 0) end end
+    -- Errors inside Ace callbacks (module OnEnable, messages) go through
+    -- this handler; raising from it would be swallowed by xpcall, so they
+    -- are recorded and printed instead (testlib fails a load that had any).
+    session.luaErrors = {}
+    env.geterrorhandler = function()
+        return function(err)
+            session.luaErrors[#session.luaErrors + 1] = tostring(err)
+            print("  LUA ERROR  " .. tostring(err))
+            return err
+        end
+    end
     env.seterrorhandler = function() end
     env.debugstack = function() return debug.traceback() end
     env.issecurevariable = function() return true end
@@ -732,6 +742,8 @@ function Mock.NewSession(opts)
     env.GetCVar = function(name) return session.cvars[name] end
     env.IsAddOnLoaded = function(addon) return addon == ADDON_DIR end
 
+    env.RAID_CLASS_COLORS = { DEATHKNIGHT = { r = 0.77, g = 0.12, b = 0.23 }, DRUID = { r = 1, g = 0.49, b = 0.04 },
+        WARLOCK = { r = 0.58, g = 0.51, b = 0.79 }, WARRIOR = { r = 0.78, g = 0.61, b = 0.43 } }
     env.CreateFrame = NewFrameFactory(session)
     env.UIParent = env.CreateFrame("Frame", "UIParent")
     env.UISpecialFrames = {}

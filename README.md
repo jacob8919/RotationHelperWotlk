@@ -45,44 +45,65 @@ spec.
 
 ## First steps
 
-1. Log in. Sample icons with your own class's spells appear below the middle of the screen.
-2. Drag them where you want them, then type `/rh lock`.
+1. Log in. Sample icons with your own class's spells appear below the middle of the screen, each
+   display under a box with its name (Primary, AOE, Interrupts, Cooldowns, Notifications).
+2. Drag the boxes where you want them, then type `/rh lock`.
 3. Target a training dummy and fight. The big icon is what to press now; the small icons are
    what comes after it, if you follow along.
 4. `/rh` opens the options. Check the **Rotation** tab for your spec's settings.
 
 ## Reading the display
 
+The display is drawn like Hekili's: a row of icons, each with a thin border, the keybind in the
+top-right corner and a cooldown sweep, and on the main icon the enemy count and the delay.
+
 | What you see | Meaning |
 |---|---|
-| Big icon | The ability to use next. |
-| Small icons | The predicted next abilities, in order. |
-| Sweep on the big icon | Not usable yet (GCD, cooldown, resources). It flashes the moment you can press it. |
-| `RUNES` / `RAGE` / `ENERGY` / `COOLDOWN` / `CAST` / `AUTO` / `WAIT` on the big icon | It's more than a GCD away; this is what it waits on. |
-| Icon sliding out to the left of the big one, shrinking | The spell you're casting or channelling, with its time left; it's gone when the cast lands. The big icon is still what to press next (the same spell again if that's what comes next). |
-| Golden glow | That ability spends a proc (Killing Machine, Hot Streak, Bloodsurge, ...). |
-| Proc icon in the corner | That proc is *why* the ability is recommended now. |
-| Blue icon | Waiting on runes (Death Knights). |
-| Red icon | Your target is out of range for it. |
-| Small icon below the status line | The big icon is out of range; this is the best thing you can do from where you are. |
-| Small icon above the big one | Your target is casting something you can interrupt. |
-| Text in the corner | The key the ability is bound to (default bars, Bartender, Dominos, ElvUI, ...). |
-| Pulsing orange border, `RUNES` / `RP` / `ENERGY` / `RAGE` on the status line | Resources are going to waste: a full rune pair, or runic power, energy or rage near the cap. |
-| Steady red border, `THREAT` | In a group: you're close to pulling aggro. |
-| `CD` / `POT` under the big icon | Cooldowns / potions. Green: suggested now. Yellow: on, waiting for a boss. Red: off. |
-| `ST` / `AOE` / a number | The AoE mode forced to single target or AoE, or (auto) how many enemies are counted. |
-| `2/4 DIS`, `2/4 CORR` | With several enemies: how many carry your diseases (Death Knight) or Corruption (Affliction). |
+| First icon | The ability to use next. |
+| Icons after it | The predicted next abilities, in order. |
+| Sweep on the first icon | Not usable yet (GCD, cooldown, resources): it runs out when you can press. |
+| Sweep on the other icons | That spell's real cooldown, the GCD included, as on your action bars. |
+| Number in the top-left corner (`1.2`) | The rotation is holding the ability longer than the sweep shows (runes, a proc, a DoT to refresh): seconds until it says to press. |
+| Number in the bottom-right corner | How many enemies the rotation is counting. `1` in single-target mode. Red: fewer are around than it assumes (forced AoE). Blue: more (forced single target). |
+| Text in the top-right corner | The key the ability is bound to (default bars, Bartender, Dominos, ElvUI, ...). |
+| Sparkles orbiting the first icon | That ability spends a proc (Killing Machine, Hot Streak, Bloodsurge, ...). The style and color are settings. |
+| Bright square highlight | The first icon's spell is the one you're casting or have queued. |
+| Grey icon | Not enough resources (runes, energy, rage, mana). |
+| Red, washed-out icon | Your target is out of range for it. |
+| Icon in the Interrupts display | Your target is casting something you can interrupt. |
+| Icon in the Cooldowns display | With "Cooldowns display" on: the next major cooldown to use (they leave the main row). |
+| Icons in the AOE display | With the dual display: the rotation for 3+ enemies, next to the single-target one. |
+| Gold text in the middle of the screen (`Cooldowns: ON`) | A toggle changed; it fades out. |
 | `Missing: ...` under the icons | Out of combat with a boss or elite targeted: what you still need before the pull. |
 | Red `!` left of the icons | The addon hit an error; see `/rh errors`. |
 
-Hold **Shift** over the locked display to hover an icon for why it's recommended (the rotation
-line, what it waits on), and to click `CD`, `POT` or the AoE mode to toggle them. Without Shift,
-clicks pass through.
+Unlock the display (`/rh lock`) and each display gets a dark box with its name: drag the box to
+move it, right-click it for the display settings.
 
-Under **Display** you can change the number of icons, size, direction and colors (including a
-color-blind friendly preset), and turn on extras: a rune bar for Death Knights, a strip of your
-major cooldowns and trinkets, and a **timeline** that places the queued icons by when they can be
-used.
+Hold **Shift** over the locked display to hover an icon for why it's recommended (the rotation
+line, what it waits on).
+
+The extras under **Display > Extras** add things Hekili doesn't have (all off by default):
+
+| What you see | Meaning |
+|---|---|
+| `RUNES` / `RAGE` / `ENERGY` / `COOLDOWN` / `CAST` / `AUTO` / `WAIT` at the bottom of the first icon | It's more than a GCD away; this is what it waits on. |
+| Icon sliding out to the left of the first one, shrinking | The spell you're casting or channelling, with its time left; it's gone when the cast lands. |
+| Proc icon in the corner | That proc is *why* the ability is recommended now. |
+| Flash on the first icon | The moment its ability can be pressed. |
+| Small icon below the status line | The first icon is out of range; this is the best thing you can do from where you are. |
+| Pulsing orange border, `RUNES` / `RP` / `ENERGY` / `RAGE` on the status line | Resources are going to waste: a full rune pair, or runic power, energy or rage near the cap. |
+| Steady red border, `THREAT` | In a group: you're close to pulling aggro. |
+| `CD` / `POT` under the first icon | Cooldowns / potions. Green: suggested now. Yellow: on, waiting for a boss. Red: off. Shift-click toggles them. |
+| `ST` / `AOE` / a number | The AoE mode forced to single target or AoE, or (auto) how many enemies are counted. Shift-click cycles it. |
+| `2/4 DIS`, `2/4 CORR` | With several enemies: how many carry your diseases (Death Knight) or Corruption (Affliction). |
+
+Under **Display** you can pick a layout preset (**Hekili (stock)**: 50px icons, three in a row;
+**Grambam (compact)**: a 32px main icon with 30px queue icons, the AoE display to the right and only
+shown with 3+ enemies), then change the icon sizes, spacing, direction, zoom, border, font size,
+the glow style, the delay style, colors (including a color-blind friendly preset), and turn on the
+extras: a rune bar for Death Knights, a strip of your major cooldowns and trinkets, and a
+**timeline** that places the queued icons by when they can be used.
 
 Random procs are never assumed; the icons update as soon as one happens.
 
@@ -177,6 +198,7 @@ simulator uses it to estimate damage per minute. Reset it after a big gear chang
 | `/rh pause` | Pause or resume. |
 | `/rh test` | Show or hide sample icons. |
 | `/rh scale <0.5-3>` / `/rh icons <1-5>` | Display scale / number of icons. |
+| `/rh preset hekili` / `/rh preset grambam` | Layout preset: Hekili's stock look, or the compact one. |
 | `/rh review [n]` | The last fight review, or saved fight n. |
 | `/rh pull <seconds>` | Start a pull timer (0 cancels). |
 | `/rh sim [seconds]` | Simulate the active rotation. |

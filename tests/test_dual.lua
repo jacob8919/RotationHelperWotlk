@@ -23,6 +23,8 @@ local function Fight(opts)
     s:FireEvent("PLAYER_TALENT_UPDATE")
     s:FireEvent("PLAYER_REGEN_DISABLED")
     RH.db.profile.toggles.cooldowns = false
+    RH.db.profile.display.showStatus = true -- the ST / AOE chip is checked below
+    RH.db.profile.display.aoeNumIcons = 4
     s:AddAura("player", { name = "Cat Form", spellId = 768, duration = 0, expires = 0 })
     if opts.locked then s:Slash("ACECONSOLE_RH", "lock") end
     if opts.dual then s:Slash("ACECONSOLE_RH", "dual") end
@@ -133,7 +135,8 @@ test("AoE display: shown with the dual display, the same show/hide rules as the 
     s:Tick(0.1)
     truthy(AoE(s).frame:IsShown(), "on")
     eq(AoE(s).frame:GetName(), "RotationHelperAoEDisplay", "frame name")
-    eq(AoE(s).frame.tag:GetText(), "AoE", "tagged")
+    eq(AoE(s).frame.mover.header:GetText(), "AOE", "named like Hekili's")
+    falsy(AoE(s).frame.mover:IsShown(), "no box while locked")
     eq(AoE(s).buttons[1].icon:GetTexture() ~= nil, true, "icon drawn")
     truthy(AoE(s).buttons[4]:IsShown(), "4 icons")
     falsy(AoE(s).buttons[5]:IsShown(), "5th hidden")
@@ -160,7 +163,7 @@ test("AoE display: unlocked it shows a preview and can be dragged; the position 
     local f = AoE(s).frame
     truthy(f:IsShown(), "preview while unlocked")
     truthy(f:IsMouseEnabled(), "draggable")
-    eq(f.tag:GetText(), "AoE: drag to move", "drag label")
+    truthy(f.mover:IsShown(), "the box with its name")
     f:ClearAllPoints()
     f:SetPoint("TOPLEFT", s.env.UIParent, "TOPLEFT", 20, -30)
     f.scripts.OnDragStop(f)
@@ -171,12 +174,14 @@ end)
 test("AoE display sizing: its own scale, icon size, queue size and icon count", function()
     local s, RH = Fight({ dual = true, locked = true })
     local d = RH.db.profile.display
-    eq(d.aoeScale .. "," .. d.aoeIconSize .. "," .. d.aoeQueueScale .. "," .. d.aoeNumIcons, "1,50,0.8,4", "defaults")
-    eq(table.concat(d.aoePoint, ","), "CENTER,UIParent,CENTER,0,-240", "below the main display")
+    local defaults = RH.db.defaults.profile.display
+    eq(defaults.aoeScale .. "," .. defaults.aoeIconSize .. "," .. defaults.aoeQueueSize .. "," .. defaults.aoeNumIcons,
+        "1,50,50,3", "defaults (Hekili's AOE display)")
+    eq(table.concat(d.aoePoint, ","), "CENTER,UIParent,CENTER,0,-170", "above the main display, like Hekili's")
 
     s:Slash("ACECONSOLE_RH", "aoescale 1.5")
     s:Slash("ACECONSOLE_RH", "aoeicons 2")
-    d.aoeIconSize, d.aoeQueueScale = 60, 0.5
+    d.aoeIconSize, d.aoeQueueSize = 60, 30
     s.ns.AoEDisplay:ApplySettings()
     s:Tick(0.1)
     local f, buttons = AoE(s).frame, AoE(s).buttons
@@ -203,16 +208,17 @@ test("options: the dual display toggle, its size section only when on, Reset pos
     local s, RH = Fight()
     local display = s.ns.Options:GetOptionsTable().args.display
     local args = display.args
-    truthy(args.aoeLayout.hidden(), "AoE size section hidden while off")
+    truthy(args.aoeScale.hidden(), "AoE size options hidden while off")
+    truthy(args.reactiveAoE.disabled(), "reactive mode greyed out while off")
     display.set({ "display", "dualDisplay" }, true)
     truthy(RH.db.profile.display.dualDisplay, "toggled from the options")
-    falsy(args.aoeLayout.hidden(), "shown when on")
-    falsy(args.aoeScale.hidden(), "scale")
+    falsy(args.aoeScale.hidden(), "shown when on")
+    falsy(args.reactiveAoE.disabled(), "reactive mode available")
     display.set({ "display", "aoeNumIcons" }, 3)
     eq(RH.db.profile.display.aoeNumIcons, 3, "icon count from the options")
 
     RH.db.profile.display.aoePoint = { "TOPLEFT", "UIParent", "TOPLEFT", 5, 5 }
     args.resetPosition.func()
     local p = RH.db.profile.display.aoePoint
-    eq(p[1] .. p[5], "CENTER-240", "AoE display position reset")
+    eq(p[1] .. p[5], "CENTER-170", "AoE display position reset")
 end)

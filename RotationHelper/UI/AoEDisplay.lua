@@ -1,14 +1,15 @@
 local ADDON_NAME, ns = ...
 local RH = ns.RH
 
--- The dual display's second display (like Hekili's "AOE" display): the
--- rotation's suggestions as if there were 3 or more enemies, shown at all
--- times next to the main display, which then shows single target. You
--- glance at whichever fits the pull.
+-- The dual display's second display (Hekili's "AOE" display): the
+-- rotation's suggestions as if there were 3 or more enemies, next to the
+-- main display, which then shows single target. You glance at whichever
+-- fits the pull. With `reactiveAoE` (Hekili's "reactive" mode) it only
+-- appears once 3 or more enemies are around.
 --
 -- It renders RH.aoeRecommendations (set by Recommender:Update) with the
--- main display's buttons, spacing, direction and colors, but its own size
--- (aoeScale, aoeIconSize, aoeQueueScale, aoeNumIcons) and position
+-- main display's buttons, spacing, direction and look, but its own size
+-- (aoeScale, aoeIconSize, aoeQueueSize, aoeNumIcons) and position
 -- (display.aoePoint); it moves while unlocked.
 local AoEDisplay = RH:NewModule("AoEDisplay", "AceEvent-3.0")
 ns.AoEDisplay = AoEDisplay
@@ -16,6 +17,7 @@ ns.AoEDisplay = AoEDisplay
 local GetTime = GetTime
 
 local MAX_ICONS = 5
+local AOE_THRESHOLD = 3
 local GROW = {
     RIGHT = { "LEFT", "RIGHT", 1, 0 },
     LEFT = { "RIGHT", "LEFT", -1, 0 },
@@ -34,17 +36,15 @@ function AoEDisplay:CreateFrames()
         frame:StopMovingOrSizing()
         AoEDisplay:SavePosition()
     end)
-
-    -- "AoE" tag so the two displays can't be mixed up.
-    f.tag = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    f.tag:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, 2)
-    f.tag:SetText("AoE")
+    f.SavePosition = function() AoEDisplay:SavePosition() end
 
     self.frame = f
     self.buttons = {}
     for i = 1, MAX_ICONS do
-        self.buttons[i] = Display.CreateButton(f, "RotationHelperAoEButton" .. i, i == 1)
+        self.buttons[i] = Display.CreateButton(f, "RotationHelperAoEButton" .. i)
     end
+    self.buttons[1].targetMode = "aoe"
+    ns.Mover.Create(f, "AOE", ns.Mover.OpenDisplaySettings)
     f:Hide()
 end
 
@@ -63,37 +63,51 @@ function AoEDisplay:ApplySettings()
     f:SetWidth(iconSize)
     f:SetHeight(iconSize)
     f:EnableMouse(not d.locked)
-    f.tag:SetText(d.locked and "AoE" or "AoE: drag to move")
 
     -- Laid out like the main display's queue (the timeline option, which
     -- places icons by time, isn't applied here).
+    local Display = ns.Display
     local grow = GROW[d.direction] or GROW.RIGHT
-    local queueSize = iconSize * (d.aoeQueueScale or d.queueScale)
+    local queueSize = d.aoeQueueSize or d.queueSize or iconSize
     for i, b in ipairs(self.buttons) do
+        Display.StyleButton(b, d)
         b:ClearAllPoints()
         if i == 1 then
             b:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
-            ns.Display.SetButtonSize(b, iconSize)
+            Display.SetButtonSize(b, iconSize)
         else
             b:SetPoint(grow[1], self.buttons[i - 1], grow[2], grow[3] * d.spacing, grow[4] * d.spacing)
-            ns.Display.SetButtonSize(b, queueSize)
+            Display.SetButtonSize(b, queueSize)
         end
-        b.tint = nil
+    end
+    if d.locked then
+        f.mover:Hide()
+    else
+        local count = d.aoeNumIcons or d.numIcons
+        local l, r, t, b = Display.Perimeter(self.buttons, count, d.direction, iconSize, queueSize)
+        ns.Mover.Layout(f.mover, l, r, t, b, not d.dualDisplay)
+        f.mover:Show()
     end
     self:Refresh()
+end
+
+-- Whether enough enemies are around for the reactive mode.
+function AoEDisplay:EnoughEnemies()
+    return (RH.detectedEnemies or ns.State.real.activeEnemies or 1) >= AOE_THRESHOLD
 end
 
 -- The entries to draw, or nil to hide: the same rules as the main display.
 function AoEDisplay:GetEntries()
     local d, Display = RH.db.profile.display, ns.Display
-    if not d.dualDisplay then return nil end
     if Display.testMode or (not d.locked and RH.classSupported) then
-        local recs = RH.aoeRecommendations
+        local recs = d.dualDisplay and RH.aoeRecommendations
         if not Display.testMode and RH:IsActive() and recs and #recs > 0 then return recs end
         return Display:GetPreview()
     end
+    if not d.dualDisplay then return nil end
     if not RH:IsActive() then return nil end
     if d.hideOutOfCombat and not RH.inCombat then return nil end
+    if d.reactiveAoE and not self:EnoughEnemies() then return nil end
     local recs = RH.aoeRecommendations
     if recs and #recs > 0 then return recs end
 end

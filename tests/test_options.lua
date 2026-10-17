@@ -167,7 +167,7 @@ test("general and display settings write to the profile", function()
 
     RH.db.profile.display.point = { "TOPLEFT", "UIParent", "TOPLEFT", 5, 5 }
     Args(s, "display").resetPosition.func()
-    eq(RH.db.profile.display.point[1] .. RH.db.profile.display.point[5], "CENTER-150", "position reset")
+    eq(RH.db.profile.display.point[1] .. RH.db.profile.display.point[5], "CENTER-225", "position reset (Hekili's spot)")
 end)
 
 ---------------------------------------------------------------------------

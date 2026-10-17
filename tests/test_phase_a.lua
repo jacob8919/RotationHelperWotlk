@@ -17,6 +17,8 @@ local function Fight()
     s.hasTarget = true
     s:FireEvent("PLAYER_REGEN_DISABLED")
     RH.db.profile.toggles.cooldowns = false
+    local d = RH.db.profile.display -- the extras these tests cover
+    d.showStatus, d.holdIndicator, d.alternative, d.warningBorders = true, true, true, true
     s:Slash("ACECONSOLE_RH", "lock")
     s:AddAura("target", { name = "Frost Fever", spellId = 55095, duration = 15, expires = s.time + 900, harmful = true })
     s:AddAura("target", { name = "Blood Plague", spellId = 55078, duration = 15, expires = s.time + 900, harmful = true })
@@ -45,7 +47,7 @@ test("A8: tints use the profile's colors, and presets change them", function()
     eq(select(2, args.colorOutOfRange.get()), 0.2, "get")
     args.colorsDefault.func()
     s:Tick(0.1)
-    eq(Main(s).icon.vertexColor[2], 0.25, "back to default")
+    eq(Main(s).icon.vertexColor[2], 0, "back to default (Hekili's red)")
 end)
 
 ---------------------------------------------------------------------------

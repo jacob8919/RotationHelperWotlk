@@ -9,6 +9,7 @@ local function Fight()
     s.hasTarget = true
     s:FireEvent("PLAYER_REGEN_DISABLED")
     RH.db.profile.toggles.cooldowns = false
+    RH.db.profile.display.showStatus, RH.db.profile.display.procBadge = true, true -- our extras, checked below
     s:Slash("ACECONSOLE_RH", "lock")
     s:AddAura("target", { name = "Frost Fever", spellId = 55095, duration = 15, expires = s.time + 900, harmful = true })
     s:AddAura("target", { name = "Blood Plague", spellId = 55078, duration = 15, expires = s.time + 900, harmful = true })
@@ -123,8 +124,10 @@ test("the icon spending Killing Machine glows", function()
     s:Tick(0.1)
     local D = s.ns.Display
     eq(s.env.RotationHelper.recommendations[1].name, "frost_strike", "Frost Strike")
-    truthy(D.buttons[1].glow:IsShown(), "glows")
-    falsy(D.buttons[2].glow:IsShown(), "the next one doesn't (KM is used up)")
+    truthy(D.buttons[1].glowing, "glows")
+    eq(D.buttons[1].glowMode, "autocast", "Hekili's autocast shine by default")
+    truthy(D.buttons[1].glowFrames.autocast:IsShown(), "the shine is up")
+    falsy(D.buttons[2].glowing, "the next one doesn't (KM is used up)")
     truthy(Hover(s, 1):Text():find("Recommended because of Killing Machine"), "tooltip says why")
 end)
 
@@ -174,7 +177,7 @@ test("no badge when the proc is only spent along the way", function()
     eq(main.usesProc, "killing_machine", "it does spend KM")
     eq(main.procReason, nil, "but KM isn't why")
     local b = s.ns.Display.buttons[1]
-    truthy(b.glow:IsShown(), "glow: spends a proc")
+    truthy(b.glowing, "glow: spends a proc")
     falsy(b.badge:IsShown(), "no badge")
     truthy(Hover(s, 1):Text():find("Spends Killing Machine"), "tooltip: spends")
 end)
@@ -208,10 +211,11 @@ test("free Howling Blast (Rime) glows; nothing glows without procs", function()
     Buff(s, "Freezing Fog", 59052, 10)
     s:Tick(0.1)
     eq(RH.recommendations[1].name, "howling_blast", "Howling Blast")
-    truthy(s.ns.Display.buttons[1].glow:IsShown(), "glows")
+    truthy(s.ns.Display.buttons[1].glowing, "glows")
     s.auras.player = {}
     s:Tick(0.1)
-    for i = 1, 4 do falsy(s.ns.Display.buttons[i].glow:IsShown(), "no glow " .. i) end
+    for i = 1, 4 do falsy(s.ns.Display.buttons[i].glowing, "no glow " .. i) end
+    falsy(s.ns.Display.buttons[1].glowFrames.autocast:IsShown(), "the shine is hidden")
 end)
 
 test("glow can be turned off", function()
@@ -220,7 +224,7 @@ test("glow can be turned off", function()
     Buff(s, "Freezing Fog", 59052, 10)
     RH.db.profile.display.procGlow = false
     s:Tick(0.1)
-    falsy(s.ns.Display.buttons[1].glow:IsShown(), "off")
+    falsy(s.ns.Display.buttons[1].glowing, "off")
 end)
 
 test("proc sound: off by default, then once per new proc", function()

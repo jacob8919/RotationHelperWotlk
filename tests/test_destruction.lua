@@ -156,8 +156,10 @@ local function Landed(s, spellName)
 end
 local function CombatLog(s, subevent, spellId, spellName)
     local Mock = require("wowmock")
+    -- After the school: the damage amount for a hit, the miss type for a miss.
+    local extra = subevent == "SPELL_MISSED" and "MISS" or 100
     s:FireEvent("COMBAT_LOG_EVENT_UNFILTERED", s.time, subevent, Mock.PLAYER_GUID, "Me", Mock.FLAGS_ME,
-        "0xF130000000000099", "Mob", Mock.FLAGS_HOSTILE_NPC, spellId, spellName, 4, "MISS")
+        "0xF130000000000099", "Mob", Mock.FLAGS_HOSTILE_NPC, spellId, spellName, 4, extra)
 end
 
 test("a DoT that just landed counts as up until the game shows it", function()

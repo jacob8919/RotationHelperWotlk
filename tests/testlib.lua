@@ -32,6 +32,9 @@ end
 function T.newAddon(opts)
     local s = Mock.NewSession(opts)
     local RH = s:LoadAddon()
+    if s.luaErrors[1] then error("error while loading the addon: " .. s.luaErrors[1], 2) end
+    -- The spec tests read four predictions; the Hekili look shows three.
+    RH.db.profile.display.numIcons = 4
     return s, RH
 end
 

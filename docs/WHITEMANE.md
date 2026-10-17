@@ -261,6 +261,61 @@ the above were in); refreshing Lacerate earlier (8s, or at 1.5s on top), Swipe a
 
 ---
 
+## 9. The Hekili look (2026-10-16)
+
+The user asked for the display to look like Hekili "end to end": the icons, the cooldowns over
+them, the whole feel. Hekili's UI.lua/Options.lua (the Cataclysm port at
+`J:\reformat 9-5-24\wow\Interface\AddOns\Hekili`) and the user's own saved Hekili settings
+(`WTF\Account\...\SavedVariables\Hekili.lua`: Primary 32px with a 30px queue 1px apart, AOE
+display at +91,-140 in reactive mode, Cooldowns/Interrupts/Defensives displays) were the reference.
+
+**What was built (UI/):**
+
+- `Display.lua` rewritten around Hekili's button: the icon fills the button, a border frame sits
+  outside it one frame level lower (1px black by default, class color optional), the texture is
+  zoomed 30%, corner texts in Arial Narrow 12 outlined (keybind top right at (1,-1), delay top
+  left, enemy count bottom right, caption bottom). Queued icons show their spell's **real**
+  cooldown (GCD included, `GetSpellCooldown`); the main icon's swipe runs from the real
+  cooldown/cast/GCD start to the predicted press time (Hekili's "extend"). Delay text/dot only when
+  the wait is beyond that (`Moment`). Out of range = desaturated + red, unusable = grey
+  (`IsUsableSpell`'s notEnoughMana too). `ButtonHilight-Square` while `IsCurrentSpell`.
+  Enemy count follows Hekili's rules (1 in single mode, red/blue when forced).
+- `Glow.lua`: Hekili's three glow styles for 3.3.5 (LibCustomGlow needs retail frame pools and
+  mask textures): the autocast shine (4 rings x 4 sparkles from `UI-ItemSockets`, period 8s), a
+  pixel glow (8 lines, own perimeter math, 2 textures per line instead of masks), and the game's
+  own `ActionBarButtonSpellActivationAlert` (only shown/hidden, never animated out, so the frame
+  never lands in Blizzard's overlay pool; a static ring stands in where the template is missing).
+- `Mover.lua`: the unlocked look, a black 80% box with a class-colored 1px border and the display
+  name in 18pt outlined text; drag moves, right-click opens the Display tab; grey border for a
+  display that's off. `Display.Perimeter` picks the outermost buttons from the layout.
+- `Notify.lua`: "Cooldowns: ON" etc. in gold Arial Narrow 20 at screen center, fading over 3s
+  (`ns.Notify`). Chat still gets the message (tests and logs rely on it).
+- `Interrupt.lua` is now its own movable display ("Interrupts", default -55,-225);
+  `CooldownDisplay.lua` is new ("Cooldowns", default 0,-280): with `display.separateCooldowns`,
+  `Recommender:Update` runs the main prediction with both cooldown toggles off and a second run
+  with them on, and `RH.cooldownRecommendation` is the first `majorCooldowns` entry of that run.
+- `AoEDisplay.lua`: `reactiveAoE` (Hekili's reactive mode) hides it below 3 enemies;
+  `RH.detectedEnemies` (the count before the AoE mode's say) is set by the Recommender for the
+  corner counts.
+- Presets (`Display.PRESETS`, `/rh preset`, two buttons in the options): `hekili` (stock: 50px,
+  5px gap, 3 icons, Hekili's positions) and `grambam` (the user's compact sizes/positions, dual
+  display reactive). Values stay editable; `display.preset` remembers the last one for "Reset
+  positions".
+- Defaults are the stock Hekili look; our extras (status line, cast slot, proc badge, press
+  flash, hold caption, in-range alternative, waste/threat borders, rune bar, cooldown strip,
+  timeline) are kept as options, **off by default**. `queueScale` became `queueSize` (pixels),
+  `noResources` default is Hekili's grey, `outOfRange` pure red.
+
+**Not ported:** SpellFlash (flashing the action bar buttons; off by default in Hekili and a large
+library), Masque support, Hekili's "captions" from the APL (our caption slot carries the hold
+word), the per-element font pickers (one font size for all corners).
+
+**Test harness notes:** `wowmock.lua`'s `geterrorhandler` now records and prints errors raised
+inside Ace callbacks (module `OnEnable`, messages) instead of raising from the handler, which
+`xpcall` silently swallowed; `testlib.newAddon` fails if loading raised any. It also sets
+`numIcons = 4` after loading because the spec tests read four predictions (the default is 3).
+That surfaced a fixture bug in `test_affliction.lua` (a string damage amount), fixed.
+
 ## Files changed
 
 | File | Change |
@@ -295,6 +350,9 @@ the above were in); refreshing Lacerate earlier (8s, or at 1.5s on top), Swipe a
 - `tests/test_syntax.lua` uses `io.popen('dir /s /b ...')`, which is **Windows only**. It was skipped,
   and every addon `.lua` file was compiled with `loadfile` instead (116 files, 0 errors).
   `Bindings.xml` was checked as valid XML.
+- **Result (2026-10-16, after the Hekili look):** 643 passed, 1 failed (the `test_fury` rounding
+  case below). `test_review`'s garbage check sits right at its 16-byte limit under lupa and can
+  flip either way.
 - **Result (2026-10-11, all tests in this repo):** 618 passed, 1 failed (`test_syntax` skipped). The failure, `test_fury.lua` "rage: short on rage means waiting for
   the expected income" (expects +1.3, gets +1.2), **was already failing before any changes.** It looks
   like a rounding or floating-point difference, possibly specific to this Lua runtime, and it's
