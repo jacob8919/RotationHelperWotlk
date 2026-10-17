@@ -196,6 +196,7 @@ simulator uses it to estimate damage per minute. Reset it after a big gear chang
 | `/rh cd` / `/rh pots` | Toggle cooldowns / potions. |
 | `/rh aoe` | Cycle the AoE mode: auto > single > aoe. |
 | `/rh pause` | Pause or resume. |
+| `/rh set <key> [value]` | A rotation setting, for macros: `/rh set not_behind` flips "Not behind the target", `/rh set hs_rage 60` sets a number, `/rh set curse doom` picks a value. `/rh set` alone lists your spec's settings with their keys. |
 | `/rh test` | Show or hide sample icons. |
 | `/rh scale <0.5-3>` / `/rh icons <1-5>` | Display scale / number of icons. |
 | `/rh preset hekili` / `/rh preset grambam` | Layout preset: Hekili's stock look, or the compact one. |

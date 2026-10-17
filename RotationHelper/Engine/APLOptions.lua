@@ -114,6 +114,62 @@ function APLOptions.Getter(specKey, name)
     return function() return Value(specKey, decl) end
 end
 
+local ON_WORDS = { on = true, ["1"] = true, ["true"] = true, yes = true }
+local OFF_WORDS = { off = true, ["0"] = true, ["false"] = true, no = true }
+
+-- "Not behind the target: ON" / "Heroic Strike at rage: 60" / "Curse: Curse of Doom".
+local function Describe(decl, value)
+    if decl.type == "toggle" then return decl.name .. ": " .. (value and "ON" or "OFF") end
+    if decl.type == "select" then return decl.name .. ": " .. (decl.values[value] or tostring(value)) end
+    return decl.name .. ": " .. tostring(value)
+end
+
+-- /rh set KEY [VALUE], for macros and key bindings: flips a toggle (or
+-- sets it with on/off), sets a number (clamped to its range) or picks a
+-- select's value. Without a key, lists the current spec's settings.
+-- Returns the message to show, and whether a setting changed.
+function APLOptions.Command(specKey, input)
+    local key, value = (input or ""):match("^%s*([%w_]*)%s*(.-)%s*$")
+    local declared = APLOptions.Declared(specKey)
+    if key == "" then
+        if #declared == 0 then return "This spec's rotation has no settings.", false end
+        local lines = {}
+        for _, decl in ipairs(declared) do
+            lines[#lines + 1] = ("%s (%s)"):format(Describe(decl, Value(specKey, decl)), decl.key)
+        end
+        return "Rotation settings (/rh set KEY [VALUE]):\n  " .. table.concat(lines, "\n  "), false
+    end
+    local decl = APLOptions.Find(specKey, key)
+    if not decl then return "Unknown setting '" .. key .. "' (" .. KnownNames(specKey) .. ").", false end
+    local new
+    if decl.type == "toggle" then
+        local word = value:lower()
+        if word == "" then
+            new = not Value(specKey, decl)
+        elseif ON_WORDS[word] then
+            new = true
+        elseif OFF_WORDS[word] then
+            new = false
+        else
+            return "Usage: /rh set " .. key .. " [on|off]", false
+        end
+    elseif decl.type == "select" then
+        if not decl.values[value] then
+            local values = {}
+            for v in pairs(decl.values) do values[#values + 1] = v end
+            table.sort(values)
+            return "Usage: /rh set " .. key .. " <" .. table.concat(values, "|") .. ">", false
+        end
+        new = value
+    else
+        new = tonumber(value)
+        if not new then return ("Usage: /rh set %s <%s-%s>"):format(key, decl.min, decl.max), false end
+        new = math.max(decl.min, math.min(decl.max, new))
+    end
+    APLOptions.Set(specKey, key, new)
+    return Describe(decl, new), true
+end
+
 -- Every option name of a spec, for the name picker.
 function APLOptions.Names(specKey)
     local names = {}

@@ -526,6 +526,21 @@ local function SetDisplayNumber(self, key, label, arg, minValue, maxValue, integ
     self:SettingChangedOutsideOptions()
 end
 
+-- /rh set KEY [VALUE]: a rotation setting of the current spec, for
+-- macros (e.g. "/rh set not_behind" flips it). Announced like a toggle.
+function RH:SetRotationOption(arg)
+    if not self.classSupported or not ns.Spec.key then
+        self:Print("No rotation settings: no spec active.")
+        return
+    end
+    local message, changed = ns.APLOptions.Command(ns.Spec.key, arg)
+    self:Print(message)
+    if changed then
+        ns.Notify(message)
+        ns.Options:RefreshIfOpen()
+    end
+end
+
 -- /rh preset hekili|grambam: a layout preset (Display.PRESETS).
 function RH:SetPreset(arg)
     if not self:ApplyPreset((arg or ""):lower()) then
@@ -593,6 +608,7 @@ local HELP = {
     { "pull <seconds>", "start a pull timer for the rotation (DBM/BigWigs timers work too; 0 cancels)" },
     { "perf", "show CPU and memory use (/rh perf reset to start over)" },
     { "errors", "show recorded errors (/rh errors clear to empty the list)" },
+    { "set <key> [value]", "a rotation setting, for macros: /rh set not_behind flips it (/rh set lists them)" },
     { "preset <name>", "layout preset: hekili (stock) or grambam (compact)" },
     { "scale <n>", "display scale (0.5-3)" },
     { "icons <n>", "number of icons shown (1-5)" },
@@ -652,6 +668,7 @@ local commands = {
     sim = "PrintSim",
     damage = "PrintDamage",
     pull = "StartPullTimer",
+    set = "SetRotationOption",
     preset = "SetPreset",
     scale = "SetScale",
     icons = "SetIconCount",
