@@ -15,7 +15,11 @@ ns.Auras = Auras
 local UnitAura, GetSpellInfo = UnitAura, GetSpellInfo
 local pairs, ipairs, huge = pairs, ipairs, math.huge
 
-local MAX_AURAS = 40
+-- Read until UnitAura runs out, not just 40: a raid boss can carry more
+-- debuffs than that, and a Mangle someone else put up mid-fight (replacing
+-- yours) lands in a later slot, past the first 40. The cap only guards
+-- against a client that never returns nil.
+local MAX_AURAS = 255
 
 -- Lookup tables: spell ID or localized name -> aura key.
 local function BuildIndex(classData)

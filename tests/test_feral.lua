@@ -83,6 +83,17 @@ test("anyone's Mangle or Trauma counts", function()
     falsy(Queue(s, 3):find("mangle_cat", 1, true), "a warrior's Trauma")
 end)
 
+test("another druid's Mangle past the 40th debuff on a crowded boss still counts", function()
+    local s = Fight()
+    for i = 1, 45 do
+        s:AddAura("target", { name = "Raid debuff " .. i, spellId = 90000 + i, duration = 30, expires = s.time + 30,
+            harmful = true, caster = "raid" .. i })
+    end
+    s:AddAura("target", { name = "Mangle (Cat)", spellId = 48566, duration = 60, expires = s.time + 55, harmful = true,
+        caster = "raid7" })
+    falsy(Queue(s, 3):find("mangle_cat", 1, true), "their Mangle is the 46th debuff")
+end)
+
 test("5 points: Rip when it's running out, Ferocious Bite when everything's long", function()
     local s = Fight({ setUp = true, combo = 5 })
     eq(Queue(s, 1), "ferocious_bite", "Rip 11s, Savage Roar 30s")
